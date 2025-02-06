@@ -43,7 +43,7 @@ function App() {
 
     // --- Check for an existing session on mount ---
     useEffect(() => {
-        fetch('http://localhost:3001/api/me', { credentials: 'include' })
+        fetch('/api/me', { credentials: 'include' })
             .then(res => res.json())
             .then(data => {
                 if (data.user) {
@@ -71,7 +71,7 @@ function App() {
 
     const handleLogin = async () => {
         try {
-            const res = await fetch('http://localhost:3001/api/login', {
+            const res = await fetch('/api/login', {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
@@ -90,7 +90,7 @@ function App() {
 
     const handleRegister = async () => {
         try {
-            const res = await fetch('http://localhost:3001/api/register', {
+            const res = await fetch('/api/register', {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
@@ -108,7 +108,7 @@ function App() {
     };
 
     const handleLogout = async () => {
-        await fetch('http://localhost:3001/api/logout', { method: 'POST', credentials: 'include' });
+        await fetch('/api/logout', { method: 'POST', credentials: 'include' });
         setUser(null);
     };
 
@@ -116,7 +116,7 @@ function App() {
 
     const loadProjects = async () => {
         try {
-            const res = await fetch('http://localhost:3001/api/projects', { credentials: 'include' });
+            const res = await fetch('/api/projects', { credentials: 'include' });
             const data = await res.json();
             setProjects(data.projects);
             if (data.projects.length > 0 && !currentProject) {
@@ -129,7 +129,7 @@ function App() {
 
     const loadTasksAndEdges = async (projectId) => {
         try {
-            const tasksRes = await fetch(`http://localhost:3001/api/tasks?project_id=${projectId}`, { credentials: 'include' });
+            const tasksRes = await fetch(`/api/tasks?project_id=${projectId}`, { credentials: 'include' });
             const tasksData = await tasksRes.json();
             const newNodes = tasksData.tasks.map(task => ({
                 id: task.id.toString(),
@@ -144,7 +144,7 @@ function App() {
                 sourcePosition: 'right',
                 targetPosition: 'left'
             }));
-            const depRes = await fetch(`http://localhost:3001/api/dependencies?project_id=${projectId}`, { credentials: 'include' });
+            const depRes = await fetch(`/api/dependencies?project_id=${projectId}`, { credentials: 'include' });
             const depData = await depRes.json();
             const newEdges = depData.dependencies.map(dep => ({
                 id: dep.id.toString(),
@@ -182,7 +182,7 @@ function App() {
             const tempEdgeId = `e${params.source}-${params.target}`;
             const newEdge = { ...params, id: tempEdgeId, markerEnd: { type: 'arrowclosed' } };
             setEdges((eds) => addEdge(newEdge, eds));
-            fetch('http://localhost:3001/api/dependencies', {
+            fetch('/api/dependencies', {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
@@ -217,7 +217,7 @@ function App() {
                     const edge = edges.find(e => e.source === selectedUnlinkSource.id && e.target === node.id);
                     if (edge) {
                         setEdges((eds) => eds.filter(e => e.id !== edge.id));
-                        fetch(`http://localhost:3001/api/dependencies/${edge.id}`, {
+                        fetch(`/api/dependencies/${edge.id}`, {
                             method: 'DELETE',
                             credentials: 'include'
                         });
@@ -241,7 +241,7 @@ function App() {
                         markerEnd: { type: 'arrowclosed' }
                     };
                     setEdges((eds) => [...eds, newEdge]);
-                    fetch('http://localhost:3001/api/dependencies', {
+                    fetch('/api/dependencies', {
                         method: 'POST',
                         credentials: 'include',
                         headers: { 'Content-Type': 'application/json' },
@@ -276,7 +276,7 @@ function App() {
 
     const onNodeDragStop = useCallback(
         (event, node) => {
-            fetch(`http://localhost:3001/api/tasks/${node.id}`, {
+            fetch(`/api/tasks/${node.id}`, {
                 method: 'PUT',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
@@ -301,7 +301,7 @@ function App() {
             completed: 0,
             project_id: parseInt(currentProject)
         };
-        const res = await fetch('http://localhost:3001/api/tasks', {
+        const res = await fetch('/api/tasks', {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
@@ -328,7 +328,7 @@ function App() {
         if (selectedNodes.length === 0) return;
         const selectedIds = new Set(selectedNodes.map(n => n.id));
         selectedNodes.forEach(node => {
-            fetch(`http://localhost:3001/api/tasks/${node.id}`, {
+            fetch(`/api/tasks/${node.id}`, {
                 method: 'DELETE',
                 credentials: 'include'
             });
@@ -339,7 +339,7 @@ function App() {
     }, [selectedNodes]);
 
     const deleteNode = useCallback((node) => {
-        fetch(`http://localhost:3001/api/tasks/${node.id}`, {
+        fetch(`/api/tasks/${node.id}`, {
             method: 'DELETE',
             credentials: 'include'
         });
@@ -356,7 +356,7 @@ function App() {
         };
         dfs(node.id);
         toDelete.forEach(nodeId => {
-            fetch(`http://localhost:3001/api/tasks/${nodeId}`, {
+            fetch(`/api/tasks/${nodeId}`, {
                 method: 'DELETE',
                 credentials: 'include'
             });
@@ -383,7 +383,7 @@ function App() {
                     : n
             )
         );
-        fetch(`http://localhost:3001/api/tasks/${node.id}`, {
+        fetch(`/api/tasks/${node.id}`, {
             method: 'PUT',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
@@ -403,7 +403,7 @@ function App() {
             setNodes(prev =>
                 prev.map(n => n.id === node.id ? { ...n, data: { ...n.data, label: newTitle } } : n)
             );
-            fetch(`http://localhost:3001/api/tasks/${node.id}`, {
+            fetch(`/api/tasks/${node.id}`, {
                 method: 'PUT',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
@@ -449,7 +449,7 @@ function App() {
         });
         setNodes(newNodes);
         newNodes.forEach(node => {
-            fetch(`http://localhost:3001/api/tasks/${node.id}`, {
+            fetch(`/api/tasks/${node.id}`, {
                 method: 'PUT',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
@@ -633,7 +633,7 @@ function App() {
                         onClick={() => {
                             const name = prompt('Enter new project name:');
                             if (name) {
-                                fetch('http://localhost:3001/api/projects', {
+                                fetch('/api/projects', {
                                     method: 'POST',
                                     credentials: 'include',
                                     headers: { 'Content-Type': 'application/json' },
@@ -653,7 +653,7 @@ function App() {
                         className="btn btn-danger ms-2"
                         onClick={() => {
                             if (window.confirm("Are you sure you want to delete this project? All data will be lost.")) {
-                                fetch(`http://localhost:3001/api/projects/${currentProject}`, {
+                                fetch(`/api/projects/${currentProject}`, {
                                     method: 'DELETE',
                                     credentials: 'include'
                                 })

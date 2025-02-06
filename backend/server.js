@@ -17,13 +17,16 @@ app.use(cors({
 }));
 app.use(express.json());
 
+app.set('trust proxy', 1);
+
+
 // Configure sessions with a SQLite store.
 app.use(session({
   store: new SQLiteStore({ db: 'sessions.db', dir: './' }),
   secret: crypto.randomBytes(64).toString('hex'), 
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 } // 7 days persistence
+  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, secure: process.env.NODE_ENV === 'production', domain: 'treetrack.shreey.am' } // 7 days persistence
 }));
 
 // Connect to our main SQLite DB.

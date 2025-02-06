@@ -667,7 +667,7 @@ function App() {
                     >
                         Delete Project
                     </button>
-                    <button className="btn btn-outline-secondary me-2" onClick={handleLogout}>
+                    <button className="btn btn-outline-secondary ms-2" onClick={handleLogout}>
                         Logout
                     </button>
                 </div>

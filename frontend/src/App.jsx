@@ -210,7 +210,7 @@ function App() {
                 setContextMenu({ visible: false, x: 0, y: 0, node: null });
             }
             // Unlink mode: Ctrl+Shift+Click
-            if (event.ctrlKey && event.shiftKey) {
+            if ((event.ctrlKey || event.metaKey) && event.shiftKey) {
                 if (!selectedUnlinkSource) {
                     setSelectedUnlinkSource(node);
                 } else if (selectedUnlinkSource.id !== node.id) {
@@ -229,7 +229,7 @@ function App() {
                 return;
             }
             // Linking mode: Ctrl+Click without Shift
-            if (event.ctrlKey && !event.shiftKey) {
+            if ((event.ctrlKey || event.metaKey) && !event.shiftKey) {
                 if (!selectedSource) {
                     setSelectedSource(node);
                 } else if (selectedSource.id !== node.id) {

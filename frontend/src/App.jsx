@@ -7,6 +7,7 @@ import ReactFlow, {
     Controls,
     applyNodeChanges
 } from 'react-flow-renderer';
+import Dropdown from 'react-bootstrap/Dropdown';
 import * as dagre from 'dagre';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
@@ -668,40 +669,27 @@ function App() {
                     >
                         Delete Project
                     </button>
-                    <div className="dropdown">
-                        <button
-                            className="btn btn-outline-secondary dropdown-toggle ms-2"
-                            type="button"
-                            id="userDropdown"
-                            data-bs-toggle="dropdown"
-                            aria-expanded="false"
-                        >
+                    <Dropdown align="end" className="ms-2">
+                        <Dropdown.Toggle variant="outline-secondary" id="dropdown-basic">
                             {user.username}
-                        </button>
-                        <ul className="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
-                            <li>
-                                <a className="dropdown-item" href="https://github.com/Shreeyam/treetrack/issues">
-                                    Feature Request
-                                </a>
-                            </li>
-                            <li>
-                                <a className="dropdown-item" href="https://ko-fi.com/shreeyam">
-                                    Tip Jar
-                                </a>
-                            </li>
-                            <li>
-                                <hr className="dropdown-divider" />
-                            </li>
-                            <li>
-                                <button className="dropdown-item" onClick={handleLogout}>
-                                    Logout
-                                </button>
-                            </li>
-                            <li>
+                        </Dropdown.Toggle>
+
+                        <Dropdown.Menu>
+                            <Dropdown.Item href="https://github.com/Shreeyam/treetrack/issues">
+                                Feature Request
+                            </Dropdown.Item>
+                            <Dropdown.Item href="https://ko-fi.com/shreeyam">
+                                Tip Jar
+                            </Dropdown.Item>
+                            <Dropdown.Divider />
+                            <Dropdown.Item onClick={handleLogout}>
+                                Logout
+                            </Dropdown.Item>
+                            <Dropdown.Item disabled>
                                 Treetrack v0.0.2
-                            </li>
-                        </ul>
-                    </div>
+                            </Dropdown.Item>
+                        </Dropdown.Menu>
+                    </Dropdown>
                 </div>
             </div>
 

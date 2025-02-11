@@ -120,6 +120,7 @@ function App() {
             const data = await res.json();
             setProjects(data.projects);
             if (data.projects.length > 0 && !currentProject) {
+                // set it to the last one probably...
                 setCurrentProject(data.projects[0].id.toString());
             }
         } catch (error) {
@@ -667,9 +668,40 @@ function App() {
                     >
                         Delete Project
                     </button>
-                    <button className="btn btn-outline-secondary ms-2" onClick={handleLogout}>
-                        Logout
-                    </button>
+                    <div className="dropdown">
+                        <button
+                            className="btn btn-outline-secondary dropdown-toggle ms-2"
+                            type="button"
+                            id="userDropdown"
+                            data-bs-toggle="dropdown"
+                            aria-expanded="false"
+                        >
+                            {user.username}
+                        </button>
+                        <ul className="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                            <li>
+                                <a className="dropdown-item" href="https://github.com/Shreeyam/treetrack/issues">
+                                    Feature Request
+                                </a>
+                            </li>
+                            <li>
+                                <a className="dropdown-item" href="https://ko-fi.com/shreeyam">
+                                    Tip Jar
+                                </a>
+                            </li>
+                            <li>
+                                <hr className="dropdown-divider" />
+                            </li>
+                            <li>
+                                <button className="dropdown-item" onClick={handleLogout}>
+                                    Logout
+                                </button>
+                            </li>
+                            <li>
+                                Treetrack v0.0.2
+                            </li>
+                        </ul>
+                    </div>
                 </div>
             </div>
 

@@ -675,16 +675,17 @@ function App() {
                         </Dropdown.Toggle>
 
                         <Dropdown.Menu>
-                            <Dropdown.Item href="https://github.com/Shreeyam/treetrack/issues">
+                            <Dropdown.Item href="https://github.com/Shreeyam/treetrack/issues" target="_blank">
                                 Feature Request
                             </Dropdown.Item>
-                            <Dropdown.Item href="https://ko-fi.com/shreeyam">
+                            <Dropdown.Item href="https://ko-fi.com/shreeyam" target="_blank">
                                 Tip Jar
                             </Dropdown.Item>
                             <Dropdown.Divider />
-                            <Dropdown.Item onClick={handleLogout}>
+                            <Dropdown.Item onClick={handleLogout} className="text-danger">
                                 Logout
                             </Dropdown.Item>
+                            <Dropdown.Divider />
                             <Dropdown.Item disabled>
                                 Treetrack v0.0.2
                             </Dropdown.Item>

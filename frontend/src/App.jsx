@@ -858,7 +858,7 @@ function App() {
                                 <button
                                     className="btn btn-sm btn-outline-secondary w-100"
                                     onClick={() => {
-                                        updateNodeColor(contextMenu.node, '#ffffff');
+                                        updateNodeColor(contextMenu.node, '');
                                         setContextMenu({ visible: false, x: 0, y: 0, node: null });
                                     }}
                                 >

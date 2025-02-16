@@ -324,7 +324,7 @@ function App() {
             posY: Math.random() * 400,
             completed: 0,
             project_id: parseInt(currentProject),
-            color: '#ffffff'
+            color: ''
         };
         const res = await fetch('/api/tasks', {
             method: 'POST',
@@ -335,7 +335,7 @@ function App() {
         const json = await res.json();
         const newNode = {
             id: json.id.toString(),
-            data: { label: newTaskTitle, completed: false, color: '#ffffff' },
+            data: { label: newTaskTitle, completed: false, color: '' },
             position: { x: newTask.posX, y: newTask.posY },
             style: { 
                 ...nodeStyles, 

@@ -19,6 +19,23 @@ const nodeStyles = {
     boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
 };
 
+// Helper function to blend two hex colors
+// weight: a value between 0 and 1 (e.g. 0.5 means a 50/50 mix)
+function blendColors(color1, color2, weight) {
+    let c1 = parseInt(color1.slice(1), 16);
+    let c2 = parseInt(color2.slice(1), 16);
+    let r1 = c1 >> 16;
+    let g1 = (c1 >> 8) & 0xff;
+    let b1 = c1 & 0xff;
+    let r2 = c2 >> 16;
+    let g2 = (c2 >> 8) & 0xff;
+    let b2 = c2 & 0xff;
+    let r = Math.round(r1 * (1 - weight) + r2 * weight);
+    let g = Math.round(g1 * (1 - weight) + g2 * weight);
+    let b = Math.round(b1 * (1 - weight) + b2 * weight);
+    return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
+
 function App() {
     // --- Authentication States ---
     const [user, setUser] = useState(null);
@@ -69,7 +86,6 @@ function App() {
     }, [currentProject]);
 
     // --- Authentication Functions ---
-
     const handleLogin = async () => {
         try {
             const res = await fetch('/api/login', {
@@ -114,14 +130,12 @@ function App() {
     };
 
     // --- Project Functions ---
-
     const loadProjects = async () => {
         try {
             const res = await fetch('/api/projects', { credentials: 'include' });
             const data = await res.json();
             setProjects(data.projects);
             if (data.projects.length > 0 && !currentProject) {
-                // set it to the last one probably...
                 setCurrentProject(data.projects[0].id.toString());
             }
         } catch (error) {
@@ -133,19 +147,23 @@ function App() {
         try {
             const tasksRes = await fetch(`/api/tasks?project_id=${projectId}`, { credentials: 'include' });
             const tasksData = await tasksRes.json();
-            const newNodes = tasksData.tasks.map(task => ({
-                id: task.id.toString(),
-                data: { label: task.title, completed: task.completed === 1 },
-                position: { x: task.posX, y: task.posY },
-                style: {
-                    ...nodeStyles,
-                    backgroundColor: task.completed === 1 ? '#e0e0e0' : '#ffffff',
-                    color: task.completed === 1 ? '#888' : 'inherit',
-                    border: '1px solid #ccc'
-                },
-                sourcePosition: 'right',
-                targetPosition: 'left'
-            }));
+            const newNodes = tasksData.tasks.map(task => {
+                const baseColor = task.color || '#ffffff';
+                const backgroundColor = task.completed === 1 ? blendColors(baseColor, '#e0e0e0', 0.5) : baseColor;
+                return {
+                    id: task.id.toString(),
+                    data: { label: task.title, completed: task.completed === 1, color: baseColor },
+                    position: { x: task.posX, y: task.posY },
+                    style: {
+                        ...nodeStyles,
+                        backgroundColor,
+                        color: task.completed === 1 ? '#888' : 'inherit',
+                        border: '1px solid #ccc'
+                    },
+                    sourcePosition: 'right',
+                    targetPosition: 'left'
+                };
+            });
             const depRes = await fetch(`/api/dependencies?project_id=${projectId}`, { credentials: 'include' });
             const depData = await depRes.json();
             const newEdges = depData.dependencies.map(dep => ({
@@ -162,19 +180,22 @@ function App() {
     };
 
     // --- Node & Edge Functions (using useCallback) ---
-
     const onNodesChange = useCallback(
         (changes) =>
             setNodes((nds) =>
-                applyNodeChanges(changes, nds).map(node => ({
-                    ...node,
-                    style: {
-                        ...nodeStyles,
-                        backgroundColor: node.data.completed ? '#e0e0e0' : '#ffffff',
-                        color: node.data.completed ? '#888' : 'inherit',
-                        border: node.selected ? '2px solid blue' : '1px solid #ccc'
-                    }
-                }))
+                applyNodeChanges(changes, nds).map(node => {
+                    const baseColor = node.data.color || '#ffffff';
+                    const backgroundColor = node.data.completed ? blendColors(baseColor, '#e0e0e0', 0.5) : baseColor;
+                    return {
+                        ...node,
+                        style: {
+                            ...nodeStyles,
+                            backgroundColor,
+                            color: node.data.completed ? '#888' : 'inherit',
+                            border: node.selected ? '2px solid blue' : '1px solid #ccc'
+                        }
+                    };
+                })
             ),
         []
     );
@@ -287,6 +308,7 @@ function App() {
                     posX: node.position.x,
                     posY: node.position.y,
                     completed: node.data.completed ? 1 : 0,
+                    color: node.data.color,
                     project_id: parseInt(currentProject)
                 })
             });
@@ -301,7 +323,8 @@ function App() {
             posX: Math.random() * 400,
             posY: Math.random() * 400,
             completed: 0,
-            project_id: parseInt(currentProject)
+            project_id: parseInt(currentProject),
+            color: '#ffffff'
         };
         const res = await fetch('/api/tasks', {
             method: 'POST',
@@ -312,9 +335,13 @@ function App() {
         const json = await res.json();
         const newNode = {
             id: json.id.toString(),
-            data: { label: newTaskTitle, completed: false },
+            data: { label: newTaskTitle, completed: false, color: '#ffffff' },
             position: { x: newTask.posX, y: newTask.posY },
-            style: { ...nodeStyles, backgroundColor: '#ffffff', border: '1px solid #ccc' },
+            style: { 
+                ...nodeStyles, 
+                backgroundColor: '#ffffff', 
+                border: '1px solid #ccc' 
+            },
             sourcePosition: 'right',
             targetPosition: 'left'
         };
@@ -369,6 +396,8 @@ function App() {
 
     const toggleCompleted = useCallback((node) => {
         const updatedCompleted = !node.data.completed;
+        const baseColor = node.data.color || '#ffffff';
+        const backgroundColor = updatedCompleted ? blendColors(baseColor, '#e0e0e0', 0.5) : baseColor;
         setNodes(prev =>
             prev.map(n =>
                 n.id === node.id
@@ -377,7 +406,7 @@ function App() {
                         data: { ...n.data, completed: updatedCompleted },
                         style: {
                             ...nodeStyles,
-                            backgroundColor: updatedCompleted ? '#e0e0e0' : '#ffffff',
+                            backgroundColor,
                             color: updatedCompleted ? '#888' : 'inherit',
                             border: n.selected ? '2px solid blue' : '1px solid #ccc'
                         }
@@ -394,6 +423,39 @@ function App() {
                 posX: node.position.x,
                 posY: node.position.y,
                 completed: updatedCompleted ? 1 : 0,
+                color: baseColor,
+                project_id: parseInt(currentProject)
+            })
+        });
+    }, [currentProject]);
+
+    const updateNodeColor = useCallback((node, color) => {
+        const baseColor = color;
+        const backgroundColor = node.data.completed ? blendColors(baseColor, '#e0e0e0', 0.5) : baseColor;
+        setNodes(prev =>
+            prev.map(n =>
+                n.id === node.id
+                    ? {
+                        ...n,
+                        data: { ...n.data, color },
+                        style: {
+                            ...n.style,
+                            backgroundColor
+                        }
+                    }
+                    : n
+            )
+        );
+        fetch(`/api/tasks/${node.id}`, {
+            method: 'PUT',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: node.data.label,
+                posX: node.position.x,
+                posY: node.position.y,
+                completed: node.data.completed ? 1 : 0,
+                color,
                 project_id: parseInt(currentProject)
             })
         });
@@ -466,7 +528,7 @@ function App() {
         });
     }, [nodes, edges, currentProject]);
 
-    // Compute "next tasks": tasks that are not completed and whose all prerequisites (incoming edges) are complete.
+    // Compute "next tasks"
     const nextTaskIds = new Set();
     nodes.forEach(node => {
         if (!node.data.completed) {
@@ -495,7 +557,7 @@ function App() {
         ) {
             styleOverrides = { ...styleOverrides, border: '2px solid red' };
         } else if (selectedSource && node.id === selectedSource.id) {
-            styleOverrides = { ...styleOverrides, backgroundColor: '#ffffff', border: '2px solid green' };
+            styleOverrides = { ...styleOverrides, backgroundColor: node.data.color || '#ffffff', border: '2px solid green' };
         }
         if (highlightNext) {
             styleOverrides = nextTaskIds.has(node.id)
@@ -507,7 +569,6 @@ function App() {
 
     // --- Render ---
     if (!user) {
-        // Show login/registration form if not logged in.
         return (
             <div className="container mt-5">
                 {isRegister ? (
@@ -565,7 +626,6 @@ function App() {
         );
     }
 
-    // Main application UI.
     return (
         <div className="d-flex flex-column" style={{ height: '100vh', position: 'relative' }}>
             {/* Top Bar */}
@@ -673,7 +733,6 @@ function App() {
                         <Dropdown.Toggle variant="outline-secondary" id="dropdown-basic">
                             {user.username}
                         </Dropdown.Toggle>
-
                         <Dropdown.Menu>
                             <Dropdown.Item href="https://github.com/Shreeyam/treetrack/issues" target="_blank">
                                 Feature Request
@@ -756,7 +815,7 @@ function App() {
                             Edit
                         </li>
                         <li
-                            className="list-group-item list-group-item-action"
+                            className="list-group-item list-group-item-action text-danger"
                             style={{ cursor: 'pointer' }}
                             onClick={() => {
                                 deleteNode(contextMenu.node);
@@ -766,7 +825,7 @@ function App() {
                             Delete
                         </li>
                         <li
-                            className="list-group-item list-group-item-action"
+                            className="list-group-item list-group-item-action text-danger"
                             style={{ cursor: 'pointer' }}
                             onClick={() => {
                                 deleteSubtree(contextMenu.node);
@@ -774,6 +833,38 @@ function App() {
                             }}
                         >
                             Delete Subtree
+                        </li>
+                        <li className="list-group-item">
+                            <div className="d-flex" style={{ gap: '4px' }}>
+                                {['#ffcccc', '#fce5cd', '#fff2cc', '#d9ead3'].map((color) => (
+                                    <div
+                                        key={color}
+                                        onClick={() => {
+                                            updateNodeColor(contextMenu.node, color);
+                                            setContextMenu({ visible: false, x: 0, y: 0, node: null });
+                                        }}
+                                        style={{
+                                            backgroundColor: color,
+                                            cursor: 'pointer',
+                                            flex: '1',
+                                            aspectRatio: '1',
+                                            borderRadius: '4px'
+                                        }}
+                                        title={color}
+                                    />
+                                ))}
+                            </div>
+                            <div className="mt-2">
+                                <button
+                                    className="btn btn-sm btn-outline-secondary w-100"
+                                    onClick={() => {
+                                        updateNodeColor(contextMenu.node, '#ffffff');
+                                        setContextMenu({ visible: false, x: 0, y: 0, node: null });
+                                    }}
+                                >
+                                    Reset Color
+                                </button>
+                            </div>
                         </li>
                     </ul>
                 </div>

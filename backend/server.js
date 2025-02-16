@@ -26,7 +26,7 @@ app.use(session({
   secret: crypto.randomBytes(64).toString('hex'), 
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, secure: process.env.NODE_ENV === 'production', domain: 'treetrack.shreey.am' } // 7 days persistence
+  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, secure: process.env.NODE_ENV === 'production', domain: undefined } // 7 days persistence
 }));
 
 // Connect to our main SQLite DB.
@@ -71,6 +71,8 @@ db.serialize(() => {
       completed INTEGER DEFAULT 0,
       project_id INTEGER,
       user_id INTEGER,
+      color TEXT,
+      locked BOOLEAN DEFAULT 0,
       FOREIGN KEY(project_id) REFERENCES projects(id),
       FOREIGN KEY(user_id) REFERENCES users(id)
     )
@@ -145,7 +147,7 @@ app.post('/api/login', loginLimiter, (req, res) => {
     if (!user) return res.status(400).json({ error: "Invalid credentials" });
     try {
       const match = await bcrypt.compare(password, user.password);
-      if (match) {
+      if (match) {  
         req.session.user = { id: user.id, username: user.username };
         res.json({ id: user.id, username: user.username });
       } else {
@@ -236,10 +238,10 @@ app.post('/api/tasks', isAuthenticated, (req, res) => {
 });
 
 app.put('/api/tasks/:id', isAuthenticated, (req, res) => {
-  const { title, posX, posY, completed, project_id } = req.body;
+  const { title, posX, posY, completed, color, project_id } = req.body;
   db.run(
-    "UPDATE tasks SET title = ?, posX = ?, posY = ?, completed = ?, project_id = ? WHERE id = ? AND user_id = ?",
-    [title, posX, posY, completed, project_id, req.params.id, req.session.user.id],
+    "UPDATE tasks SET title = ?, posX = ?, posY = ?, completed = ?, color = ?, project_id = ? WHERE id = ? AND user_id = ?",
+    [title, posX, posY, completed, color, project_id, req.params.id, req.session.user.id],
     function(err) {
       if (err) return res.status(400).json({ error: err.message });
       res.json({ changes: this.changes });

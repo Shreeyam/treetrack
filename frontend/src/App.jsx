@@ -47,7 +47,9 @@ function App() {
 
     // --- Main App States ---
     const [projects, setProjects] = useState([]);
-    const [currentProject, setCurrentProject] = useState('');
+    const [currentProject, setCurrentProject] = useState(() => {
+        return localStorage.getItem('currentProject') || '';
+    });
     const [nodes, setNodes] = useState([]);
     const [edges, setEdges] = useState([]);
     const [selectedSource, setSelectedSource] = useState(null);
@@ -82,6 +84,7 @@ function App() {
     useEffect(() => {
         if (currentProject) {
             loadTasksAndEdges(currentProject);
+            localStorage.setItem('currentProject', currentProject);
         }
     }, [currentProject]);
 
@@ -136,7 +139,9 @@ function App() {
             const data = await res.json();
             setProjects(data.projects);
             if (data.projects.length > 0 && !currentProject) {
-                setCurrentProject(data.projects[0].id.toString());
+                const firstProjectId = data.projects[0].id.toString();
+                setCurrentProject(firstProjectId);
+                localStorage.setItem('currentProject', firstProjectId);
             }
         } catch (error) {
             console.error(error);

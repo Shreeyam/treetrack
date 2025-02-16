@@ -138,7 +138,7 @@ function App() {
             const res = await fetch('/api/projects', { credentials: 'include' });
             const data = await res.json();
             setProjects(data.projects);
-            if (data.projects.length > 0 && !currentProject) {
+            if (data.projects.length > 0 && (!currentProject || !data.projects.some(p => p.id.toString() === currentProject))) {
                 const firstProjectId = data.projects[0].id.toString();
                 setCurrentProject(firstProjectId);
                 localStorage.setItem('currentProject', firstProjectId);

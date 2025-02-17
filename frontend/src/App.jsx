@@ -435,7 +435,7 @@ function App() {
     }, [currentProject]);
 
     const updateNodeColor = useCallback((node, color) => {
-        const baseColor = color;
+        const baseColor = color || '#ffffff'; 
         const backgroundColor = node.data.completed ? blendColors(baseColor, '#e0e0e0', 0.5) : baseColor;
         setNodes(prev =>
             prev.map(n =>

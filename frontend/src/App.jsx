@@ -855,7 +855,9 @@ function App() {
                             className="list-group-item list-group-item-action text-danger"
                             style={{ cursor: 'pointer' }}
                             onClick={() => {
-                                deleteSubtree(contextMenu.node);
+                                if (window.confirm("Are you sure you want to delete the subtree?")) {                                    
+                                    deleteSubtree(contextMenu.node);
+                                }
                                 setContextMenu({ visible: false, x: 0, y: 0, node: null });
                             }}
                         >

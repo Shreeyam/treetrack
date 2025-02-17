@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ReactFlow, {
     ReactFlowProvider,
     addEdge,
@@ -60,6 +60,10 @@ function App() {
     const [highlightNext, setHighlightNext] = useState(false);
     const [selectedNodes, setSelectedNodes] = useState([]);
     const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, node: null });
+
+    // React Flow
+    const reactFlowWrapper = useRef(null);
+    const [reactFlowInstance, setReactFlowInstance] = useState(null);
 
     // --- Check for an existing session on mount ---
     useEffect(() => {
@@ -322,11 +326,27 @@ function App() {
     );
 
     const addNewNode = useCallback(async () => {
+        // Check if the new task title is empty
         if (!newTaskTitle.trim()) return;
+        // Check if the React Flow instance is ready
+        if (!reactFlowInstance || !reactFlowWrapper.current) return;
+
+        // Get the visible area of the React Flow container
+        const bounds = reactFlowWrapper.current.getBoundingClientRect();
+
+        const randomScreenX = Math.random() * bounds.width;
+        const randomScreenY = Math.random() * bounds.height;
+
+        // Project to react-flow coordinates
+        const { x: flowX, y: flowY } = reactFlowInstance.project({
+            x: randomScreenX,
+            y: randomScreenY,
+        });
+
         const newTask = {
             title: newTaskTitle,
-            posX: Math.random() * 400,
-            posY: Math.random() * 400,
+            posX: flowX, // updated to flowX for correct positioning
+            posY: flowY, // updated to flowY for correct positioning
             completed: 0,
             project_id: parseInt(currentProject),
             color: ''
@@ -342,17 +362,17 @@ function App() {
             id: json.id.toString(),
             data: { label: newTaskTitle, completed: false, color: '' },
             position: { x: newTask.posX, y: newTask.posY },
-            style: { 
-                ...nodeStyles, 
-                backgroundColor: '#ffffff', 
-                border: '1px solid #ccc' 
+            style: {
+                ...nodeStyles,
+                backgroundColor: '#ffffff',
+                border: '1px solid #ccc'
             },
             sourcePosition: 'right',
             targetPosition: 'left'
         };
         setNodes(prev => [...prev, newNode]);
         setNewTaskTitle('');
-    }, [newTaskTitle, currentProject]);
+    }, [newTaskTitle, currentProject, reactFlowInstance]);
 
     const onSelectionChange = useCallback(({ nodes: selected }) => {
         setSelectedNodes(selected || []);
@@ -435,7 +455,7 @@ function App() {
     }, [currentProject]);
 
     const updateNodeColor = useCallback((node, color) => {
-        const baseColor = color || '#ffffff'; 
+        const baseColor = color || '#ffffff';
         const backgroundColor = node.data.completed ? blendColors(baseColor, '#e0e0e0', 0.5) : baseColor;
         setNodes(prev =>
             prev.map(n =>
@@ -759,7 +779,7 @@ function App() {
             </div>
 
             {/* React Flow Container */}
-            <div style={{ flexGrow: 1 }}>
+            <div ref={reactFlowWrapper} style={{ flexGrow: 1 }}>
                 <ReactFlowProvider>
                     <ReactFlow
                         nodes={renderedNodes}
@@ -775,6 +795,7 @@ function App() {
                             setSelectedUnlinkSource(null);
                             setContextMenu({ visible: false, x: 0, y: 0, node: null });
                         }}
+                        onInit={setReactFlowInstance}
                         fitView
                     >
                         <Background />

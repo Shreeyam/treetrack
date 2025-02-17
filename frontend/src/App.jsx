@@ -771,7 +771,8 @@ function App() {
                             </Dropdown.Item>
                             <Dropdown.Divider />
                             <Dropdown.Item disabled>
-                                Treetrack v0.0.2
+                                Treetrack v0.0.3 <br/> 
+                                (2025-02-16)
                             </Dropdown.Item>
                         </Dropdown.Menu>
                     </Dropdown>

@@ -10,6 +10,7 @@ import ReactFlow, {
 import Dropdown from 'react-bootstrap/Dropdown';
 import * as dagre from 'dagre';
 import 'bootstrap/dist/css/bootstrap.min.css';
+import "./App.css"
 
 const nodeStyles = {
     padding: '10px',
@@ -655,18 +656,22 @@ function App() {
         <div className="d-flex flex-column" style={{ height: '100vh', position: 'relative' }}>
             {/* Top Bar */}
             <div className="p-2 bg-light d-flex align-items-center flex-wrap">
-                <input
-                    type="text"
-                    className="form-control me-2"
-                    placeholder="New task title..."
-                    value={newTaskTitle}
-                    onChange={(e) => setNewTaskTitle(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') addNewNode(); }}
-                    style={{ maxWidth: '200px' }}
-                />
-                <button className="btn btn-primary me-2" onClick={addNewNode}>
-                    Add Task
-                </button>
+                <div className="form-group me-2">
+                    <div className="input-group">
+                        <input
+                            type="text"
+                            className="form-control"
+                            placeholder="New task title..."
+                            value={newTaskTitle}
+                            onChange={(e) => setNewTaskTitle(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') addNewNode(); }}
+                            style={{ maxWidth: '200px' }}
+                        />
+                        <button className="btn btn-primary btn-add" onClick={addNewNode}>
+                            <i className="fas fa-plus" ></i>
+                        </button>
+                    </div>
+                </div>
                 <div className="form-check me-2">
                     <input
                         type="checkbox"
@@ -688,18 +693,11 @@ function App() {
                         onChange={(e) => setHighlightNext(e.target.checked)}
                     />
                     <label className="form-check-label" htmlFor="highlightNext">
-                        Highlight Next Tasks
+                        Highlight Next
                     </label>
                 </div>
-                <button
-                    className="btn btn-danger me-2"
-                    onClick={deleteSelected}
-                    disabled={selectedNodes.length === 0}
-                >
-                    Delete Selected
-                </button>
-                <button className="btn btn-secondary me-2" onClick={autoArrange}>
-                    Auto Arrange
+                <button className="btn btn-outline-secondary me-2" onClick={autoArrange}>
+                    <i className="fas fa-wand-magic-sparkles"></i> Auto Arrange
                 </button>
                 {/* Projects Dropdown and Buttons on the top right */}
                 <div className="ms-auto d-flex align-items-center">
@@ -734,10 +732,10 @@ function App() {
                             }
                         }}
                     >
-                        New Project
+                        <i className="fas fa-folder-plus"></i>New
                     </button>
                     <button
-                        className="btn btn-danger ms-2"
+                        className="btn btn-outline-danger ms-2"
                         onClick={() => {
                             if (window.confirm("Are you sure you want to delete this project? All data will be lost.")) {
                                 fetch(`/api/projects/${currentProject}`, {
@@ -752,27 +750,27 @@ function App() {
                             }
                         }}
                     >
-                        Delete Project
+                        <i className="fas fa-trash force-parent-lh"></i>
                     </button>
                     <Dropdown align="end" className="ms-2">
                         <Dropdown.Toggle variant="outline-secondary" id="dropdown-basic">
-                            {user.username}
+                            <i className="fas fa-user-circle" />{user.username}
                         </Dropdown.Toggle>
                         <Dropdown.Menu>
                             <Dropdown.Item href="https://github.com/Shreeyam/treetrack/issues" target="_blank">
-                                Feature Request
+                                <i className="fas fa-comment-alt" /> Feature Request
                             </Dropdown.Item>
                             <Dropdown.Item href="https://ko-fi.com/shreeyam" target="_blank">
-                                Tip Jar
+                                <i className="fas fa-mug-hot" />Tip Jar
                             </Dropdown.Item>
                             <Dropdown.Divider />
                             <Dropdown.Item onClick={handleLogout} className="text-danger">
-                                Logout
+                                <i className="fas fa-sign-out-alt" /> Logout
                             </Dropdown.Item>
                             <Dropdown.Divider />
                             <Dropdown.Item disabled>
-                                Treetrack v0.0.3 <br/> 
-                                (2025-02-16)
+                                Treetrack v0.0.4 <br />
+                                (2025-02-28)
                             </Dropdown.Item>
                         </Dropdown.Menu>
                     </Dropdown>
@@ -818,82 +816,76 @@ function App() {
                     }}
                     onClick={(e) => e.stopPropagation()}
                 >
-                    <ul className="list-group list-group-flush">
+                    <ul className="list-group list-group-flush flex-item-gap">
                         <li
-                            className="list-group-item list-group-item-action"
+                            className="list-group-item context-menu-item list-group-item-action"
                             style={{ cursor: 'pointer' }}
                             onClick={() => {
                                 toggleCompleted(contextMenu.node);
                                 setContextMenu({ visible: false, x: 0, y: 0, node: null });
                             }}
                         >
+                            <i className={`fas ${contextMenu.node && contextMenu.node.data.completed ? 'fa-times' : 'fa-check'}`} style={{color: contextMenu.node && contextMenu.node.data.completed ? 'var(--bs-red)' : 'var(--bs-green)'}} />
                             {contextMenu.node && contextMenu.node.data.completed
                                 ? 'Mark Incomplete'
                                 : 'Mark Completed'}
                         </li>
                         <li
-                            className="list-group-item list-group-item-action"
+                            className="list-group-item context-menu-item list-group-item-action"
                             style={{ cursor: 'pointer' }}
                             onClick={() => {
                                 editNodeTitle(contextMenu.node);
                                 setContextMenu({ visible: false, x: 0, y: 0, node: null });
                             }}
                         >
-                            Edit
+                            <i className="fas fa-edit" /> Edit
                         </li>
                         <li
-                            className="list-group-item list-group-item-action text-danger"
+                            className="list-group-item context-menu-item list-group-item-action text-danger"
                             style={{ cursor: 'pointer' }}
                             onClick={() => {
                                 deleteNode(contextMenu.node);
                                 setContextMenu({ visible: false, x: 0, y: 0, node: null });
                             }}
                         >
-                            Delete
+                            <i className="fas fa-trash" />Delete
                         </li>
                         <li
-                            className="list-group-item list-group-item-action text-danger"
+                            className="list-group-item context-menu-item list-group-item-action text-danger"
                             style={{ cursor: 'pointer' }}
                             onClick={() => {
-                                if (window.confirm("Are you sure you want to delete the subtree?")) {                                    
+                                if (window.confirm("Are you sure you want to delete the subtree?")) {
                                     deleteSubtree(contextMenu.node);
                                 }
                                 setContextMenu({ visible: false, x: 0, y: 0, node: null });
                             }}
                         >
-                            Delete Subtree
+                            <i className="fas fa-trash" />Delete Subtree
                         </li>
-                        <li className="list-group-item">
-                            <div className="d-flex" style={{ gap: '4px' }}>
-                                {['#ffcccc', '#fce5cd', '#fff2cc', '#d9ead3'].map((color) => (
+                        <li className="list-group-item context-menu-item colors">
+                            <div className="color-options">
+                                {['#ffcccc', '#fce5cd', '#fff2cc', '#d9ead3', '#d2e1f3'].map((color) => (
                                     <div
                                         key={color}
                                         onClick={() => {
                                             updateNodeColor(contextMenu.node, color);
                                             setContextMenu({ visible: false, x: 0, y: 0, node: null });
                                         }}
-                                        style={{
-                                            backgroundColor: color,
-                                            cursor: 'pointer',
-                                            flex: '1',
-                                            aspectRatio: '1',
-                                            borderRadius: '4px'
-                                        }}
+                                        className="color-option"
+                                        style={{ backgroundColor: color }}
                                         title={color}
                                     />
                                 ))}
                             </div>
-                            <div className="mt-2">
-                                <button
-                                    className="btn btn-sm btn-outline-secondary w-100"
-                                    onClick={() => {
-                                        updateNodeColor(contextMenu.node, '');
-                                        setContextMenu({ visible: false, x: 0, y: 0, node: null });
-                                    }}
-                                >
-                                    Reset Color
-                                </button>
-                            </div>
+                            <button
+                                className="btn btn-sm btn-outline-secondary w-100"
+                                onClick={() => {
+                                    updateNodeColor(contextMenu.node, '');
+                                    setContextMenu({ visible: false, x: 0, y: 0, node: null });
+                                }}
+                            >
+                                <i className="fas fa-undo"></i> Reset Color
+                            </button>
                         </li>
                     </ul>
                 </div>

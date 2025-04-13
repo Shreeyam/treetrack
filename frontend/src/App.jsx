@@ -1,17 +1,71 @@
 // src/App.jsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import ReactFlow, {
+import {
+    ReactFlow,
     ReactFlowProvider,
     addEdge,
     Background,
     Controls,
-    applyNodeChanges
-} from 'react-flow-renderer';
-import Dropdown from 'react-bootstrap/Dropdown';
-import * as dagre from 'dagre';
-import 'bootstrap/dist/css/bootstrap.min.css';
-import "./App.css"
+    applyNodeChanges,
+    MiniMap,
+    useViewport
+} from '@xyflow/react';
 
+import '@xyflow/react/dist/style.css';
+
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from "@/components/ui/command"
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover"
+
+import * as dagre from 'dagre';
+import {
+    Button
+} from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+    Card,
+    CardHeader,
+    CardContent
+} from '@/components/ui/card';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+    DropdownMenuCheckboxItem,
+    DropdownMenuSeparator
+} from '@/components/ui/dropdown-menu';
+import {
+    Coffee,
+    DropletOff,
+    FolderPlus,
+    LogOut,
+    Pencil,
+    WandSparkles,
+    Plus,
+    Trash,
+    User,
+    MessageCirclePlus,
+    Sparkles,
+    X,
+    Check,
+    ChevronDown,
+    Network,
+    Gem
+} from 'lucide-react';
+
+// import "./App.css";
+import "@/globals.css"
 const nodeStyles = {
     padding: '10px',
     border: '1px solid #ccc',
@@ -21,7 +75,6 @@ const nodeStyles = {
 };
 
 // Helper function to blend two hex colors
-// weight: a value between 0 and 1 (e.g. 0.5 means a 50/50 mix)
 function blendColors(color1, color2, weight) {
     let c1 = parseInt(color1.slice(1), 16);
     let c2 = parseInt(color2.slice(1), 16);
@@ -48,9 +101,7 @@ function App() {
 
     // --- Main App States ---
     const [projects, setProjects] = useState([]);
-    const [currentProject, setCurrentProject] = useState(() => {
-        return localStorage.getItem('currentProject') || '';
-    });
+    const [currentProject, setCurrentProject] = useState(() => localStorage.getItem('currentProject') || '');
     const [nodes, setNodes] = useState([]);
     const [edges, setEdges] = useState([]);
     const [selectedSource, setSelectedSource] = useState(null);
@@ -59,6 +110,8 @@ function App() {
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [hideCompleted, setHideCompleted] = useState(false);
     const [highlightNext, setHighlightNext] = useState(false);
+    const [minimapOn, setMinimapOn] = useState(true);
+    const [backgroundOn, setBackgroundOn] = useState(true);
     const [selectedNodes, setSelectedNodes] = useState([]);
     const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, node: null });
 
@@ -189,7 +242,7 @@ function App() {
         }
     };
 
-    // --- Node & Edge Functions (using useCallback) ---
+    // --- Node & Edge Functions ---
     const onNodesChange = useCallback(
         (changes) =>
             setNodes((nds) =>
@@ -327,29 +380,27 @@ function App() {
     );
 
     const addNewNode = useCallback(async () => {
-        // Check if the new task title is empty
         if (!newTaskTitle.trim()) return;
-        // Check if the React Flow instance is ready
         if (!reactFlowInstance || !reactFlowWrapper.current) return;
 
-        // Get the visible area of the React Flow container
         const bounds = reactFlowWrapper.current.getBoundingClientRect();
-
         const randomScreenX = Math.random() * bounds.width;
         const randomScreenY = Math.random() * bounds.height;
 
-        // Project to react-flow coordinates
-        const { x: flowX, y: flowY } = reactFlowInstance.project({
-            x: randomScreenX,
-            y: randomScreenY,
-        });
+        // Get the viewport state from reactFlowInstance
+        // viewport contains { x, y, zoom } values
+        const viewport = reactFlowInstance.getViewport();
+        console.log(viewport)
+        // Manually convert screen coordinates to flow coordinates
+        const flowX = (randomScreenX - viewport.x) / viewport.zoom;
+        const flowY = (randomScreenY - viewport.y) / viewport.zoom;
 
         const newTask = {
             title: newTaskTitle,
-            posX: flowX, // updated to flowX for correct positioning
-            posY: flowY, // updated to flowY for correct positioning
+            posX: flowX,
+            posY: flowY,
             completed: 0,
-            project_id: parseInt(currentProject),
+            project_id: parseInt(currentProject, 10),
             color: ''
         };
         const res = await fetch('/api/tasks', {
@@ -594,116 +645,135 @@ function App() {
     });
 
     // --- Render ---
+
     if (!user) {
         return (
-            <div className="container mt-5">
-                {isRegister ? (
-                    <div>
-                        <h2>Register</h2>
-                        <input
-                            className="form-control my-2"
-                            type="text"
-                            placeholder="Username"
-                            value={registerUsername}
-                            onChange={(e) => setRegisterUsername(e.target.value)}
-                        />
-                        <input
-                            className="form-control my-2"
-                            type="password"
-                            placeholder="Password"
-                            value={registerPassword}
-                            onChange={(e) => setRegisterPassword(e.target.value)}
-                        />
-                        <button className="btn btn-primary" onClick={handleRegister}>Register</button>
-                        <p className="mt-2">
-                            Already have an account?{' '}
-                            <button className="btn btn-link" onClick={() => setIsRegister(false)}>
-                                Login here
-                            </button>
-                        </p>
-                    </div>
-                ) : (
-                    <div>
-                        <h2>Login</h2>
-                        <input
-                            className="form-control my-2"
-                            type="text"
-                            placeholder="Username"
-                            value={loginUsername}
-                            onChange={(e) => setLoginUsername(e.target.value)}
-                        />
-                        <input
-                            className="form-control my-2"
-                            type="password"
-                            placeholder="Password"
-                            value={loginPassword}
-                            onChange={(e) => setLoginPassword(e.target.value)}
-                        />
-                        <button className="btn btn-primary" onClick={handleLogin}>Login</button>
-                        <p className="mt-2">
-                            Don't have an account?{' '}
-                            <button className="btn btn-link" onClick={() => setIsRegister(true)}>
-                                Register here
-                            </button>
-                        </p>
-                    </div>
-                )}
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+                <Card className="w-full max-w-md">
+                    <CardHeader>
+                        <h2 className="text-xl font-semibold">{isRegister ? 'Register' : 'Login'}</h2>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        {isRegister ? (
+                            <>
+                                <Input
+                                    placeholder="Username"
+                                    value={registerUsername}
+                                    onChange={(e) => setRegisterUsername(e.target.value)}
+                                />
+                                <Input
+                                    type="password"
+                                    placeholder="Password"
+                                    value={registerPassword}
+                                    onChange={(e) => setRegisterPassword(e.target.value)}
+                                />
+                                <Button onClick={handleRegister}>Register</Button>
+                                <div className="text-sm">
+                                    Already have an account?{' '}
+                                    <Button variant="link" onClick={() => setIsRegister(false)}>
+                                        Login here
+                                    </Button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <Input
+                                    placeholder="Username"
+                                    value={loginUsername}
+                                    onChange={(e) => setLoginUsername(e.target.value)}
+                                />
+                                <Input
+                                    type="password"
+                                    placeholder="Password"
+                                    value={loginPassword}
+                                    onChange={(e) => setLoginPassword(e.target.value)}
+                                />
+                                <Button onClick={handleLogin}>Login</Button>
+                                <div className="text-sm">
+                                    Don&apos;t have an account?{' '}
+                                    <Button variant="link" onClick={() => setIsRegister(true)}>
+                                        Register here
+                                    </Button>
+                                </div>
+                            </>
+                        )}
+                    </CardContent>
+                </Card>
             </div>
         );
     }
 
     return (
-        <div className="d-flex flex-column" style={{ height: '100vh', position: 'relative' }}>
+        <div className="h-screen flex flex-col relative">
             {/* Top Bar */}
-            <div className="p-2 bg-light d-flex align-items-center flex-wrap">
-                <div className="form-group me-2">
-                    <div className="input-group">
+            <div className="p-2 border-1 border-neutral-200 flex flex-wrap items-center space-x-2">
+                <div className="flex items-center space-x-2">
+                    <Input
+                        placeholder="New task title..."
+                        value={newTaskTitle}
+                        onChange={(e) => setNewTaskTitle(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') addNewNode(); }}
+                        className="max-w-xs mr-0 rounded-r-none"
+                    />
+                    <Button onClick={addNewNode} className="rounded-l-none">
+                        <Plus />
+                    </Button>
+                </div>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="outline">
+                            View Options <ChevronDown size={16} />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                        <DropdownMenuCheckboxItem checked={hideCompleted} onCheckedChange={setHideCompleted}>
+                            Hide Completed
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuCheckboxItem checked={highlightNext} onCheckedChange={setHighlightNext}>
+                            Highlight Next
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuCheckboxItem checked={minimapOn} onCheckedChange={setMinimapOn}>
+                            Show Minimap
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuCheckboxItem checked={backgroundOn} onCheckedChange={setBackgroundOn}>
+                            Show Background
+                        </DropdownMenuCheckboxItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+                {/* <div className="flex items-center space-x-2">
+                    <label className="flex items-center space-x-1">
                         <input
-                            type="text"
-                            className="form-control"
-                            placeholder="New task title..."
-                            value={newTaskTitle}
-                            onChange={(e) => setNewTaskTitle(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') addNewNode(); }}
-                            style={{ maxWidth: '200px' }}
+                            type="checkbox"
+                            checked={hideCompleted}
+                            onChange={(e) => setHideCompleted(e.target.checked)}
+                            className="form-checkbox"
                         />
-                        <button className="btn btn-primary btn-add" onClick={addNewNode}>
-                            <i className="fas fa-plus" ></i>
-                        </button>
-                    </div>
-                </div>
-                <div className="form-check me-2">
-                    <input
-                        type="checkbox"
-                        className="form-check-input"
-                        id="hideCompleted"
-                        checked={hideCompleted}
-                        onChange={(e) => setHideCompleted(e.target.checked)}
-                    />
-                    <label className="form-check-label" htmlFor="hideCompleted">
-                        Hide Completed
+                        <span>Hide Completed</span>
                     </label>
-                </div>
-                <div className="form-check me-2">
-                    <input
-                        type="checkbox"
-                        className="form-check-input"
-                        id="highlightNext"
-                        checked={highlightNext}
-                        onChange={(e) => setHighlightNext(e.target.checked)}
-                    />
-                    <label className="form-check-label" htmlFor="highlightNext">
-                        Highlight Next
+                    <label className="flex items-center space-x-1">
+                        <input
+                            type="checkbox"
+                            checked={highlightNext}
+                            onChange={(e) => setHighlightNext(e.target.checked)}
+                            className="form-checkbox"
+                        />
+                        <span>Highlight Next</span>
                     </label>
-                </div>
-                <button className="btn btn-outline-secondary me-2" onClick={autoArrange}>
-                    <i className="fas fa-wand-magic-sparkles"></i> Auto Arrange
-                </button>
-                {/* Projects Dropdown and Buttons on the top right */}
-                <div className="ms-auto d-flex align-items-center">
+                </div> */}
+                <Button variant="outline" onClick={autoArrange}>
+                    <WandSparkles /> Auto Arrange
+                </Button>
+                <Button variant="outline" onClick={autoArrange}>
+                    <Sparkles /> Generate
+                </Button>
+                <Button variant="black" >
+                    <Gem className="text-purple-500" /> Upgrade
+                </Button>
+                {/* Projects Dropdown and Buttons */}
+                <div className="ml-auto flex items-center space-x-2">
                     <select
-                        className="form-select"
-                        style={{ width: '200px' }}
+                        className="border rounded px-2 py-1"
                         value={currentProject || ''}
                         onChange={(e) => setCurrentProject(e.target.value)}
                     >
@@ -713,72 +783,67 @@ function App() {
                             </option>
                         ))}
                     </select>
-                    <button
-                        className="btn btn-outline-primary ms-2"
-                        onClick={() => {
-                            const name = prompt('Enter new project name:');
-                            if (name) {
-                                fetch('/api/projects', {
-                                    method: 'POST',
-                                    credentials: 'include',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ name })
-                                })
-                                    .then(res => res.json())
-                                    .then(data => {
-                                        loadProjects();
-                                        setCurrentProject(data.id.toString());
-                                    });
-                            }
-                        }}
-                    >
-                        <i className="fas fa-folder-plus"></i>New
-                    </button>
-                    <button
-                        className="btn btn-outline-danger ms-2"
-                        onClick={() => {
-                            if (window.confirm("Are you sure you want to delete this project? All data will be lost.")) {
-                                fetch(`/api/projects/${currentProject}`, {
-                                    method: 'DELETE',
-                                    credentials: 'include'
-                                })
-                                    .then(res => res.json())
-                                    .then(() => {
-                                        loadProjects();
-                                        setCurrentProject('');
-                                    });
-                            }
-                        }}
-                    >
-                        <i className="fas fa-trash force-parent-lh"></i>
-                    </button>
-                    <Dropdown align="end" className="ms-2">
-                        <Dropdown.Toggle variant="outline-secondary" id="dropdown-basic">
-                            <i className="fas fa-user-circle" />{user.username}
-                        </Dropdown.Toggle>
-                        <Dropdown.Menu>
-                            <Dropdown.Item href="https://github.com/Shreeyam/treetrack/issues" target="_blank">
-                                <i className="fas fa-comment-alt" /> Feature Request
-                            </Dropdown.Item>
-                            <Dropdown.Item href="https://ko-fi.com/shreeyam" target="_blank">
-                                <i className="fas fa-mug-hot" />Tip Jar
-                            </Dropdown.Item>
-                            <Dropdown.Divider />
-                            <Dropdown.Item onClick={handleLogout} className="text-danger">
-                                <i className="fas fa-sign-out-alt" /> Logout
-                            </Dropdown.Item>
-                            <Dropdown.Divider />
-                            <Dropdown.Item disabled>
-                                Treetrack v0.0.4 <br />
-                                (2025-02-28)
-                            </Dropdown.Item>
-                        </Dropdown.Menu>
-                    </Dropdown>
+                    <Button variant="outline" onClick={() => {
+                        const name = prompt('Enter new project name:');
+                        if (name) {
+                            fetch('/api/projects', {
+                                method: 'POST',
+                                credentials: 'include',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ name })
+                            })
+                                .then(res => res.json())
+                                .then(data => {
+                                    loadProjects();
+                                    setCurrentProject(data.id.toString());
+                                });
+                        }
+                    }}>
+                        <FolderPlus /> New
+                    </Button>
+                    <Button variant="destructive" onClick={() => {
+                        if (window.confirm("Are you sure you want to delete this project? All data will be lost.")) {
+                            fetch(`/api/projects/${currentProject}`, {
+                                method: 'DELETE',
+                                credentials: 'include'
+                            })
+                                .then(res => res.json())
+                                .then(() => {
+                                    loadProjects();
+                                    setCurrentProject('');
+                                });
+                        }
+                    }}>
+                        <Trash />
+                    </Button>
+
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline">
+                                <User /> {user.username}
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem as="a" href="https://github.com/Shreeyam/treetrack/issues" target="_blank">
+                                <MessageCirclePlus /> Feature Request
+                            </DropdownMenuItem>
+                            <DropdownMenuItem as="a" href="https://ko-fi.com/shreeyam" target="_blank">
+                                <Coffee /> Tip Jar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={handleLogout} className="text-destructive">
+                                <LogOut /> Logout
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem disabled className="opacity-50">
+                                Treetrack v0.0.4<br />(2025-02-28)
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </div>
             </div>
 
             {/* React Flow Container */}
-            <div ref={reactFlowWrapper} style={{ flexGrow: 1 }}>
+            <div ref={reactFlowWrapper} className="flex-grow">
                 <ReactFlowProvider>
                     <ReactFlow
                         nodes={renderedNodes}
@@ -797,7 +862,8 @@ function App() {
                         onInit={setReactFlowInstance}
                         fitView
                     >
-                        <Background />
+                        {minimapOn && <MiniMap pannable zoomable position='top-right' nodeColor={'#ddd'} className="border-gray-200 border-1" height={120} width={150} />}
+                        {backgroundOn && <Background />}
                         <Controls />
                     </ReactFlow>
                 </ReactFlowProvider>
@@ -806,53 +872,48 @@ function App() {
             {/* Context Menu */}
             {contextMenu.visible && (
                 <div
-                    className="card"
+                    className="absolute bg-white shadow-md rounded border mt-1"
                     style={{
-                        position: 'fixed',
                         top: contextMenu.y,
                         left: contextMenu.x,
-                        zIndex: 1000,
-                        minWidth: '150px'
+                        minWidth: '150px',
+                        zIndex: 1000
                     }}
                     onClick={(e) => e.stopPropagation()}
                 >
-                    <ul className="list-group list-group-flush flex-item-gap">
+                    <ul className="divide-y">
                         <li
-                            className="list-group-item context-menu-item list-group-item-action"
-                            style={{ cursor: 'pointer' }}
+                            className="p-2 cursor-pointer hover:bg-gray-100 flex items-center space-x-2"
                             onClick={() => {
                                 toggleCompleted(contextMenu.node);
                                 setContextMenu({ visible: false, x: 0, y: 0, node: null });
                             }}
                         >
-                            <i className={`fas ${contextMenu.node && contextMenu.node.data.completed ? 'fa-times' : 'fa-check'}`} style={{color: contextMenu.node && contextMenu.node.data.completed ? 'var(--bs-red)' : 'var(--bs-green)'}} />
-                            {contextMenu.node && contextMenu.node.data.completed
-                                ? 'Mark Incomplete'
-                                : 'Mark Completed'}
+                            {contextMenu.node && contextMenu.node.data.completed ? <X className="text-destructive" size={24} /> : <Check className="text-green-600" size={16} />}
+                            <span>{contextMenu.node && contextMenu.node.data.completed ? 'Mark Incomplete' : 'Mark Completed'}</span>
                         </li>
                         <li
-                            className="list-group-item context-menu-item list-group-item-action"
-                            style={{ cursor: 'pointer' }}
+                            className="p-2 cursor-pointer hover:bg-gray-100 flex items-center space-x-2"
                             onClick={() => {
                                 editNodeTitle(contextMenu.node);
                                 setContextMenu({ visible: false, x: 0, y: 0, node: null });
                             }}
                         >
-                            <i className="fas fa-edit" /> Edit
+                            <Pencil size={16} />
+                            <span>Edit</span>
                         </li>
                         <li
-                            className="list-group-item context-menu-item list-group-item-action text-danger"
-                            style={{ cursor: 'pointer' }}
+                            className="p-2 cursor-pointer hover:bg-gray-100 flex items-center space-x-2 text-destructive"
                             onClick={() => {
                                 deleteNode(contextMenu.node);
                                 setContextMenu({ visible: false, x: 0, y: 0, node: null });
                             }}
                         >
-                            <i className="fas fa-trash" />Delete
+                            <Trash size={16} />
+                            <span>Delete</span>
                         </li>
                         <li
-                            className="list-group-item context-menu-item list-group-item-action text-danger"
-                            style={{ cursor: 'pointer' }}
+                            className="p-2 cursor-pointer hover:bg-gray-100 flex items-center space-x-2 text-destructive"
                             onClick={() => {
                                 if (window.confirm("Are you sure you want to delete the subtree?")) {
                                     deleteSubtree(contextMenu.node);
@@ -860,10 +921,11 @@ function App() {
                                 setContextMenu({ visible: false, x: 0, y: 0, node: null });
                             }}
                         >
-                            <i className="fas fa-trash" />Delete Subtree
+                            <Network size={16} />
+                            <span>Delete Subtree</span>
                         </li>
-                        <li className="list-group-item context-menu-item colors">
-                            <div className="color-options">
+                        <li className="p-2">
+                            <div className="flex space-x-1 mb-2">
                                 {['#ffcccc', '#fce5cd', '#fff2cc', '#d9ead3', '#d2e1f3'].map((color) => (
                                     <div
                                         key={color}
@@ -871,21 +933,18 @@ function App() {
                                             updateNodeColor(contextMenu.node, color);
                                             setContextMenu({ visible: false, x: 0, y: 0, node: null });
                                         }}
-                                        className="color-option"
+                                        className="w-full aspect-square rounded cursor-pointer border"
                                         style={{ backgroundColor: color }}
                                         title={color}
                                     />
                                 ))}
                             </div>
-                            <button
-                                className="btn btn-sm btn-outline-secondary w-100"
-                                onClick={() => {
-                                    updateNodeColor(contextMenu.node, '');
-                                    setContextMenu({ visible: false, x: 0, y: 0, node: null });
-                                }}
-                            >
-                                <i className="fas fa-undo"></i> Reset Color
-                            </button>
+                            <Button size="sm" className="w-full" variant="outline" onClick={() => {
+                                updateNodeColor(contextMenu.node, '');
+                                setContextMenu({ visible: false, x: 0, y: 0, node: null });
+                            }}>
+                                <DropletOff /> Reset Color
+                            </Button>
                         </li>
                     </ul>
                 </div>

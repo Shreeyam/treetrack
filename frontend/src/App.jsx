@@ -8,7 +8,6 @@ import {
     Controls,
     applyNodeChanges,
     MiniMap,
-    useViewport
 } from '@xyflow/react';
 
 import '@xyflow/react/dist/style.css';
@@ -39,6 +38,8 @@ import {
     CardHeader,
     CardContent
 } from '@/components/ui/card';
+
+import SparklyUpgradeButton from '@/components/ui/upgradeButton';
 
 import {
     DropdownMenu,
@@ -735,9 +736,9 @@ function App() {
                 <Button variant="outline" onClick={() => window.alert("Feature coming soon!")}>
                     <Sparkles /> Generate
                 </Button>
-                <Button variant="black" onClick={() => window.alert("Feature coming soon!")}>
+                <SparklyUpgradeButton onClick={() => window.alert("Feature coming soon!")}>
                     <Gem className="text-purple-500" /> Upgrade
-                </Button>
+                </SparklyUpgradeButton>
                 {/* Projects Dropdown and Buttons */}
                 <div className="ml-auto flex items-center space-x-2">
                     <select
@@ -792,11 +793,23 @@ function App() {
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                            <DropdownMenuItem as="a" href="https://github.com/Shreeyam/treetrack/issues" target="_blank">
-                                <MessageCirclePlus /> Feature Request
+                            <DropdownMenuItem asChild>
+                                <a
+                                    href="https://github.com/Shreeyam/treetrack/issues"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    <MessageCirclePlus /> Feature Request
+                                </a>
                             </DropdownMenuItem>
-                            <DropdownMenuItem as="a" href="https://ko-fi.com/shreeyam" target="_blank">
-                                <Coffee /> Tip Jar
+                            <DropdownMenuItem asChild>
+                                <a
+                                    href="https://ko-fi.com/shreeyam"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    <Coffee /> Tip Jar
+                                </a>
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={handleLogout} className="text-destructive">
                                 <LogOut /> Logout

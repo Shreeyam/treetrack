@@ -39,12 +39,6 @@ import {
     CardHeader,
     CardContent
 } from '@/components/ui/card';
-import {
-    ContextMenu,
-    ContextMenuContent,
-    ContextMenuItem,
-    ContextMenuSeparator,
-  } from "@/components/ui/context-menu";
 
 import {
     DropdownMenu,

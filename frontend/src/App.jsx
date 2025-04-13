@@ -651,6 +651,7 @@ function App() {
                                     placeholder="Password"
                                     value={registerPassword}
                                     onChange={(e) => setRegisterPassword(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') handleRegister(); }}
                                 />
                                 <Button onClick={handleRegister}>Register</Button>
                                 <div className="text-sm">
@@ -672,6 +673,7 @@ function App() {
                                     placeholder="Password"
                                     value={loginPassword}
                                     onChange={(e) => setLoginPassword(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
                                 />
                                 <Button onClick={handleLogin}>Login</Button>
                                 <div className="text-sm">

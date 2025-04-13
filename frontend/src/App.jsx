@@ -12,6 +12,7 @@ import {
 } from '@xyflow/react';
 
 import '@xyflow/react/dist/style.css';
+import blendColors from './utils/colors';
 
 import {
     Command,
@@ -28,6 +29,7 @@ import {
 } from "@/components/ui/popover"
 
 import * as dagre from 'dagre';
+
 import {
     Button
 } from '@/components/ui/button';
@@ -64,7 +66,6 @@ import {
     Gem
 } from 'lucide-react';
 
-// import "./App.css";
 import "@/globals.css"
 const nodeStyles = {
     padding: '10px',
@@ -73,22 +74,6 @@ const nodeStyles = {
     backgroundColor: '#ffffff',
     boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
 };
-
-// Helper function to blend two hex colors
-function blendColors(color1, color2, weight) {
-    let c1 = parseInt(color1.slice(1), 16);
-    let c2 = parseInt(color2.slice(1), 16);
-    let r1 = c1 >> 16;
-    let g1 = (c1 >> 8) & 0xff;
-    let b1 = c1 & 0xff;
-    let r2 = c2 >> 16;
-    let g2 = (c2 >> 8) & 0xff;
-    let b2 = c2 & 0xff;
-    let r = Math.round(r1 * (1 - weight) + r2 * weight);
-    let g = Math.round(g1 * (1 - weight) + g2 * weight);
-    let b = Math.round(b1 * (1 - weight) + b2 * weight);
-    return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-}
 
 function App() {
     // --- Authentication States ---
@@ -110,7 +95,7 @@ function App() {
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [hideCompleted, setHideCompleted] = useState(false);
     const [highlightNext, setHighlightNext] = useState(false);
-    const [minimapOn, setMinimapOn] = useState(true);
+    const [minimapOn, setMinimapOn] = useState(false);
     const [backgroundOn, setBackgroundOn] = useState(true);
     const [selectedNodes, setSelectedNodes] = useState([]);
     const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, node: null });
@@ -741,33 +726,13 @@ function App() {
                         </DropdownMenuCheckboxItem>
                     </DropdownMenuContent>
                 </DropdownMenu>
-                {/* <div className="flex items-center space-x-2">
-                    <label className="flex items-center space-x-1">
-                        <input
-                            type="checkbox"
-                            checked={hideCompleted}
-                            onChange={(e) => setHideCompleted(e.target.checked)}
-                            className="form-checkbox"
-                        />
-                        <span>Hide Completed</span>
-                    </label>
-                    <label className="flex items-center space-x-1">
-                        <input
-                            type="checkbox"
-                            checked={highlightNext}
-                            onChange={(e) => setHighlightNext(e.target.checked)}
-                            className="form-checkbox"
-                        />
-                        <span>Highlight Next</span>
-                    </label>
-                </div> */}
                 <Button variant="outline" onClick={autoArrange}>
                     <WandSparkles /> Auto Arrange
                 </Button>
-                <Button variant="outline" onClick={autoArrange}>
+                <Button variant="outline" onClick={() => window.alert("Feature coming soon!")}>
                     <Sparkles /> Generate
                 </Button>
-                <Button variant="black" >
+                <Button variant="black" onClick={() => window.alert("Feature coming soon!")}>
                     <Gem className="text-purple-500" /> Upgrade
                 </Button>
                 {/* Projects Dropdown and Buttons */}

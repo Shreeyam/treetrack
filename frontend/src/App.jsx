@@ -40,6 +40,13 @@ import {
     CardContent
 } from '@/components/ui/card';
 import {
+    ContextMenu,
+    ContextMenuContent,
+    ContextMenuItem,
+    ContextMenuSeparator,
+  } from "@/components/ui/context-menu";
+
+import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
@@ -802,7 +809,7 @@ function App() {
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem disabled className="opacity-50">
-                                Treetrack v0.0.4<br />(2025-02-28)
+                                Treetrack v0.0.5<br />(2025-04-12)
                             </DropdownMenuItem>
                         </DropdownMenuContent>
                     </DropdownMenu>

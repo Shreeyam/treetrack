@@ -1,0 +1,155 @@
+import React, { memo } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import SparklyUpgradeButton from '@/components/ui/upgradeButton';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+    DropdownMenuCheckboxItem,
+    DropdownMenuSeparator
+} from '@/components/ui/dropdown-menu';
+import {
+    Plus,
+    WandSparkles,
+    Sparkles,
+    Gem,
+    FolderPlus,
+    Trash,
+    User,
+    MessageCirclePlus,
+    Coffee,
+    LogOut,
+    ChevronDown
+} from 'lucide-react';
+
+const TopBar = memo(({
+    newTaskTitle,
+    onNewTaskTitleChange,
+    onAddNode,
+    hideCompleted,
+    setHideCompleted,
+    highlightNext,
+    setHighlightNext,
+    minimapOn,
+    setMinimapOn,
+    backgroundOn,
+    setBackgroundOn,
+    onAutoArrange,
+    currentProject,
+    projects,
+    onProjectChange,
+    onCreateProject,
+    onDeleteProject,
+    user,
+    onLogout
+}) => {
+    return (
+        <div className="p-2 border-1 border-neutral-200 flex flex-wrap items-center space-x-2">
+            <div className="flex items-center space-x-2">
+                <Input
+                    placeholder="New task title..."
+                    value={newTaskTitle}
+                    onChange={(e) => onNewTaskTitleChange(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') onAddNode(); }}
+                    className="max-w-xs mr-0 rounded-r-none"
+                />
+                <Button onClick={onAddNode} className="rounded-l-none">
+                    <Plus />
+                </Button>
+            </div>
+            
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button variant="outline">
+                        View Options <ChevronDown size={16} />
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                    <DropdownMenuCheckboxItem checked={hideCompleted} onCheckedChange={setHideCompleted}>
+                        Hide Completed
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem checked={highlightNext} onCheckedChange={setHighlightNext}>
+                        Highlight Next
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuCheckboxItem checked={minimapOn} onCheckedChange={setMinimapOn}>
+                        Show Minimap
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem checked={backgroundOn} onCheckedChange={setBackgroundOn}>
+                        Show Background
+                    </DropdownMenuCheckboxItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button variant="outline" onClick={onAutoArrange}>
+                <WandSparkles /> Auto Arrange
+            </Button>
+            <Button variant="outline" onClick={() => window.alert("Feature coming soon!")}>
+                <Sparkles /> Generate
+            </Button>
+            <SparklyUpgradeButton onClick={() => window.alert("Feature coming soon!")}>
+                <Gem className="text-purple-500" /> Upgrade
+            </SparklyUpgradeButton>
+
+            <div className="ml-auto flex items-center space-x-2">
+                <select
+                    className="border rounded px-2 py-1"
+                    value={currentProject || ''}
+                    onChange={(e) => onProjectChange(e.target.value)}
+                >
+                    {projects.map(project => (
+                        <option key={project.id} value={project.id}>
+                            {project.name}
+                        </option>
+                    ))}
+                </select>
+                <Button variant="outline" onClick={onCreateProject}>
+                    <FolderPlus /> New
+                </Button>
+                <Button variant="destructive" onClick={onDeleteProject}>
+                    <Trash />
+                </Button>
+
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="outline">
+                            <User /> {user.username}
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                        <DropdownMenuItem asChild>
+                            <a
+                                href="https://github.com/Shreeyam/treetrack/issues"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                <MessageCirclePlus /> Feature Request
+                            </a>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                            <a
+                                href="https://ko-fi.com/shreeyam"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                <Coffee /> Tip Jar
+                            </a>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={onLogout} className="text-destructive">
+                            <LogOut /> Logout
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem disabled className="opacity-50">
+                            Treetrack v0.0.5<br />(2025-04-12)
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
+        </div>
+    );
+});
+
+TopBar.displayName = 'TopBar';
+export default TopBar;

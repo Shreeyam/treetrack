@@ -468,7 +468,7 @@ Be thoughtful and detailed. The goal is to create a structured blueprint of the 
             temperature=0.7
         )
         # Extract the content from the response.
-        response_text = chat_completion.choices[0].message.content
+        response_text = chat_completion.output_text
 
         # Parse the JSON response.
         project_data = json.loads(response_text)
@@ -535,6 +535,7 @@ if __name__ == "__main__":
     config = HyperConfig()
     #config.bind = ["0.0.0.0:3001"]
     config.debug = True
+    config.loglevel = "debug"
 
     # Run Hypercorn asynchronously.
     asyncio.run(serve(app, config))

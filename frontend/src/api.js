@@ -89,3 +89,13 @@ export const deleteDependency = async (dependencyId) => {
     credentials: 'include',
   });
 };
+
+export const generate = async (userInput, projectId, currentState) => {
+  const res = await fetch('/api/generate', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_input: userInput, project_id: projectId, current_state: currentState }),
+  });
+  return res.json();
+}

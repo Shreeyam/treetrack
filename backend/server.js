@@ -7,6 +7,9 @@ const SQLiteStore = require('connect-sqlite3')(session);
 const bcrypt = require('bcrypt');
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
+const OpenAI = require("openai");
+
+const openai = new OpenAI();
 
 const app = express();
 const port = 3001;
@@ -18,7 +21,6 @@ app.use(cors({
 app.use(express.json());
 
 app.set('trust proxy', 1);
-
 
 // Configure sessions with a SQLite store.
 app.use(session({
@@ -303,6 +305,157 @@ app.delete('/api/dependencies/:id', isAuthenticated, (req, res) => {
     if (err) return res.status(400).json({ error: err.message });
     res.json({ changes: this.changes });
   });
+});
+
+async function generativeEdit(userInput, projectId, userId, currentState) {
+  const jsonSchema = `{
+  "type": "object",
+  "properties": {
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "title": {"type": "string"},
+          "posX": {"type": "number"},
+          "posY": {"type": "number"},
+          "completed": {"type": "integer"},
+          "project_id": {"type": "integer"},
+          "user_id": {"type": "integer"},
+          "color": {"type": "string"},
+          "locked": {"type": "integer"},
+          "draft": {"type": "integer"}
+        },
+        "required": ["id", "title", "posX", "posY", "completed", "project_id", "user_id", "color", "locked"],
+        "additionalProperties": false
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "from_task": {"type": "integer"},
+          "to_task": {"type": "integer"},
+          "project_id": {"type": "integer"},
+          "user_id": {"type": "integer"}
+        },
+        "required": ["id", "from_task", "to_task", "project_id", "user_id"],
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "string"
+    }
+  },
+  "required": ["tasks", "dependencies", "summary"],
+  "additionalProperties": false
+}`;
+
+  // Build the system prompt with the JSON schema embedded.
+  const systemPrompt = `You are a project planning assistant responsible for generating or editing a complete and logically structured plan to accomplish a high-level goal. The output must be a JSON object containing two parts: an array of 'tasks' and an array of 'dependencies' between them. The input contains the current project state (if provided) in the same structure as the output.
+
+Each task represents a specific, actionable step required to complete the overall goal. The tasks must form a directed acyclic graph (DAG) — some tasks should occur in strict sequence (e.g., A must be done before B), while others can occur in parallel or have no dependency between them.
+
+The graph must show **clear branching**: not every task should just point to the next. There must be **multiple layers**, where:
+- Some tasks have multiple children (forks)
+- Some tasks have multiple parents (joins)
+- Some tasks can be completed in parallel
+- The graph converges toward one or more final goal tasks
+
+Consider the real-world logical flow of a project: planning, preparation, execution, testing, and finishing. Organize the tasks accordingly, and only include meaningful dependencies—avoid unnecessary chaining of unrelated steps.
+
+Each task object must include:
+- id (integer, negative number if a new task or re-use from the input otherwise)
+- title (short, descriptive name)
+- posX and posY (default to 0)
+- completed (set to 0)
+- project_id and user_id (placeholders that will be filled in later)
+- color (use a HEX color code to reflect the stage or layer of the task, e.g., planning vs execution; should be pastel-ish as they will be the background for black text)
+- locked (set to 0)
+- draft (set to 1)
+
+Each dependency object must include:
+- id (integer)
+- from_task (source task id)
+- to_task (destination task id)
+- project_id and user_id (same placeholders)
+
+The summary should be a short description of your generated or edited tasks and dependencies. Two sentences, maximum.
+
+Ensure that the output adheres strictly to the following JSON schema:
+${jsonSchema}
+
+Be thoughtful and detailed. The goal is to create a structured blueprint of the steps needed to achieve the goal, with realistic precedence and parallelization. Output only the JSON structure for the tasks and dependencies, adhering strictly to the schema provided. If you are editing existing nodes, only include the ones you have edited in the output.`;
+
+  // Build the user prompt: include the current state if available.
+  const userPrompt = currentState
+    ? `Current project state:
+${JSON.stringify(currentState, null, 2)}
+
+Please generate an updated project plan based on this user input: '${userInput}'.`
+    : `Generate a structured project plan based on this user input: '${userInput}'`;
+
+  const messages = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt }
+  ];
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4.1-nano-2025-04-14", // Change model if desired.
+      messages: messages,
+      temperature: 0.7,
+    });
+
+    // console.log(completion.choices[0].message);
+    // // Save to text file
+    // const fs = require('fs');
+    // const filePath = 'output.txt';
+    // fs.writeFile(filePath, JSON.stringify(completion, null, 2), (err) => {
+    //   if (err) {
+    //     console.error("Error writing to file:", err);
+    //   }
+    // });
+    const responseText = completion.choices[0].message.content;
+
+    // Post-process the response to affix project, user id
+    responseTasks = JSON.parse(responseText);
+
+    responseTasks.tasks.forEach(task => {
+      task.project_id = projectId;
+      task.user_id = userId;
+    });
+    responseTasks.dependencies.forEach(dep => {
+      dep.project_id = projectId;
+      dep.user_id = userId;
+    });
+
+    responseTasks.summary = responseTasks.summary || "No summary provided.";
+
+    return responseTasks;
+
+  } catch (error) {
+    console.error("Error generating project structure:", error);
+    throw error;
+  }
+}
+
+// New endpoint to generate a project structure using OpenAI.
+app.post('/api/generate', isAuthenticated, async (req, res) => {
+  // Accept topic, project_id, and an optional current_state from the request body.
+  const { user_input: user_input, project_id, current_state } = req.body;
+  if (!user_input || !project_id) {
+    return res.status(400).json({ error: "Missing topic or project_id" });
+  }
+  try {
+    const projectData = await generativeEdit(user_input, project_id, req.session.user.id, current_state);
+    res.json({ data: projectData });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to generate project structure" });
+  }
 });
 
 // --- Start the server ---

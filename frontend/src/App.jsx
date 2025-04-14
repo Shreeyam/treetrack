@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { ReactFlowProvider, applyNodeChanges, addEdge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import '@/globals.css';
+import "@/App.css";
 import * as dagre from 'dagre';
 import blendColors from './utils/colors';
 import AuthForm from '@/components/auth/AuthForm';
@@ -9,6 +10,7 @@ import TopBar from '@/components/navigation/TopBar';
 import FlowArea from '@/components/flow/FlowArea';
 import { nodeStyles } from '@/components/flow/styles';
 import { fetchUser, fetchProjects, createProject, deleteProject, fetchTasksAndEdges, updateTask, deleteTask, deleteDependency } from './api';
+import ChatBot from './components/misc/chatbot';
 
 // Memoize imported components
 const MemoAuthForm = React.memo(AuthForm);
@@ -142,14 +144,37 @@ function App() {
     }, [currentProject]);
 
     // --- Node Management ---
-    const createNodeStyle = useCallback((color, completed, selected) => {
+    const createNodeStyle = useCallback((color, completed, selected, draft) => {
         const backgroundColor = completed ? blendColors(color, '#e0e0e0', 0.5) : color;
-        return {
+
+        // Base style for the node
+        let style = {
             ...nodeStyles,
             backgroundColor,
             color: completed ? '#888' : 'inherit',
-            border: selected ? '2px solid blue' : '1px solid #ccc'
+            border: selected ? '2px solid blue' : '1px solid #ccc',
         };
+
+        console.log(draft);
+
+        // If the node is a draft, overlay animated diagonal stripes
+        if (draft) {
+            style = {
+                ...style,
+                // Diagonal stripes using a repeating linear gradient
+                backgroundImage: `repeating-linear-gradient(
+          45deg,
+          rgba(0, 0, 0, 0.1),
+          rgba(0, 0, 0, 0.1) 10px,
+          transparent 10px,
+          transparent 20px
+        )`,
+                backgroundSize: '57px 57px',
+                animation: 'draftAnimation 3s linear infinite',
+            };
+        }
+
+        return style;
     }, []);
 
     const onNodesChange = useCallback(
@@ -157,7 +182,7 @@ function App() {
             setNodes((nds) =>
                 applyNodeChanges(changes, nds).map(node => ({
                     ...node,
-                    style: createNodeStyle(node.data.color, node.data.completed, node.selected)
+                    style: createNodeStyle(node.data.color, node.data.completed, node.selected, node.draft)
                 }))
             ),
         [createNodeStyle]
@@ -292,7 +317,7 @@ function App() {
                     ? {
                         ...n,
                         data: { ...n.data, completed: updatedCompleted },
-                        style: createNodeStyle(n.data.color, updatedCompleted)
+                        style: createNodeStyle(n.data.color, updatedCompleted),
                     }
                     : n
             )
@@ -369,6 +394,33 @@ function App() {
         setNodes(prev => prev.filter(n => !toDelete.has(n.id)));
         setEdges(prev => prev.filter(e => !toDelete.has(e.source) && !toDelete.has(e.target)));
     }, [edges]);
+
+    // TODO: Make it keep the original nodes and edges and just update the state
+    const handleGenerativeEdit = useCallback((data) => {
+        console.log("Generative edit data:", data);
+        const newNodes = data.tasks.map(task => ({
+            id: task.id.toString(),
+            data: { label: task.title, completed: task.completed === 1, color: task.color || '#ffffff' },
+            position: { x: task.posX, y: task.posY },
+            style: createNodeStyle(task.color || '#ffffff', task.completed === 1, false, true),
+            sourcePosition: 'right',
+            targetPosition: 'left',
+            draft: true
+        }));
+
+        const newEdges = data.dependencies.map(dep => ({
+            id: dep.id.toString(),
+            source: dep.from_task.toString(),
+            target: dep.to_task.toString(),
+            markerEnd: { type: 'arrowclosed' }
+        }));
+
+        setNodes(newNodes);
+        setEdges(newEdges);
+
+
+    }
+        , [createNodeStyle]);
 
     // --- Layout Management ---
     const handleAutoArrange = useCallback(() => {
@@ -497,7 +549,7 @@ function App() {
                 user={user}
                 onLogout={handleLogout}
             />
-
+            <ChatBot setIsOpen={true} nodes={nodes} dependencies={edges} currentProject={currentProject} handleGenerativeEdit={handleGenerativeEdit} />
             <ReactFlowProvider>
                 <MemoFlowArea
                     nodes={renderedNodes}

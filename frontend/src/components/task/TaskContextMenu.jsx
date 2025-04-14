@@ -25,7 +25,7 @@ const TaskContextMenu = memo(({
 
     return (
         <div
-            className="absolute bg-white shadow-md rounded border mt-1"
+            className="fixed bg-white shadow-md rounded border mt-1"
             style={{
                 top: y,
                 left: x,

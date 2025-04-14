@@ -7,7 +7,8 @@ export default function SparklyUpgradeButton() {
 
     return (
         <Button
-            className={`relative overflow-hidden rounded-md px-4 py-2 font-medium transition-all duration-300 ${isHovering ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg scale-105' : 'bg-black text-white'
+            variant="black"
+            className={`relative overflow-hidden rounded-md px-4 py-2 font-medium transition-all duration-300  ${isHovering ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg scale-105' : 'bg-black text-white'
                 }`}
             onMouseEnter={() => setIsHovering(true)}
             onMouseLeave={() => setIsHovering(false)}

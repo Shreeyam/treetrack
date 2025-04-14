@@ -28,3 +28,64 @@ export const createDependency = async (child, parent) => {
   });
   return res.json();
 };
+
+export const fetchUser = async () => {
+  const res = await fetch('/api/me', { credentials: 'include' });
+  return res.json();
+};
+
+export const fetchProjects = async () => {
+  const res = await fetch('/api/projects', { credentials: 'include' });
+  return res.json();
+};
+
+export const createProject = async (name) => {
+  const res = await fetch('/api/projects', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  return res.json();
+};
+
+export const deleteProject = async (projectId) => {
+  const res = await fetch(`/api/projects/${projectId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  return res.json();
+};
+
+export const fetchTasksAndEdges = async (projectId) => {
+  const tasksRes = await fetch(`/api/tasks?project_id=${projectId}`, { credentials: 'include' });
+  const tasksData = await tasksRes.json();
+
+  const depRes = await fetch(`/api/dependencies?project_id=${projectId}`, { credentials: 'include' });
+  const depData = await depRes.json();
+
+  return { tasks: tasksData.tasks, dependencies: depData.dependencies };
+};
+
+export const updateTask = async (taskId, taskData) => {
+  await fetch(`/api/tasks/${taskId}`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(taskData),
+  });
+};
+
+export const deleteTask = async (taskId) => {
+  await fetch(`/api/tasks/${taskId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+};
+
+export const deleteDependency = async (dependencyId) => {
+  await fetch(`/api/dependencies/${dependencyId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+};

@@ -59,7 +59,7 @@ const TopBar = memo(({
                     <Plus />
                 </Button>
             </div>
-            
+
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                     <Button variant="outline">
@@ -95,7 +95,14 @@ const TopBar = memo(({
 
             <div className="ml-auto flex items-center space-x-2">
                 <select
-                    className="border rounded px-2 py-1"
+                    className="
+                        rounded-md text-sm font-medium transition-all
+                        disabled:pointer-events-none disabled:opacity-50
+                        px-4 py-2
+                        border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground
+                        dark:bg-input/30 dark:border-input dark:hover:bg-input/50
+                        outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px]
+                    "
                     value={currentProject || ''}
                     onChange={(e) => onProjectChange(e.target.value)}
                 >

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ReactFlowProvider, applyNodeChanges } from '@xyflow/react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { ReactFlowProvider, applyNodeChanges, addEdge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import '@/globals.css';
 import * as dagre from 'dagre';
@@ -8,6 +8,12 @@ import AuthForm from '@/components/auth/AuthForm';
 import TopBar from '@/components/navigation/TopBar';
 import FlowArea from '@/components/flow/FlowArea';
 import { nodeStyles } from '@/components/flow/styles';
+import { fetchUser, fetchProjects, createProject, deleteProject, fetchTasksAndEdges, updateTask, deleteTask, deleteDependency } from './api';
+
+// Memoize imported components
+const MemoAuthForm = React.memo(AuthForm);
+const MemoTopBar = React.memo(TopBar);
+const MemoFlowArea = React.memo(FlowArea);
 
 function App() {
     // --- Authentication States ---
@@ -33,10 +39,25 @@ function App() {
     const reactFlowWrapper = useRef(null);
     const [reactFlowInstance, setReactFlowInstance] = useState(null);
 
+    const nodesRef = useRef(nodes);
+    const edgesRef = useRef(edges);
+    const currentProjectRef = useRef(currentProject);
+
+    useEffect(() => {
+        nodesRef.current = nodes;
+    }, [nodes]);
+
+    useEffect(() => {
+        edgesRef.current = edges;
+    }, [edges]);
+
+    useEffect(() => {
+        currentProjectRef.current = currentProject;
+    }, [currentProject]);
+
     // --- Session Management ---
     useEffect(() => {
-        fetch('/api/me', { credentials: 'include' })
-            .then(res => res.json())
+        fetchUser()
             .then(data => {
                 if (data.user) {
                     setUser(data.user);
@@ -47,90 +68,76 @@ function App() {
 
     useEffect(() => {
         if (user) {
-            loadProjects();
+            fetchProjects()
+                .then(data => {
+                    setProjects(data.projects);
+                    if (data.projects.length > 0 && (!currentProject || !data.projects.some(p => p.id.toString() === currentProject))) {
+                        const firstProjectId = data.projects[0].id.toString();
+                        setCurrentProject(firstProjectId);
+                        localStorage.setItem('currentProject', firstProjectId);
+                    }
+                })
+                .catch(err => console.error(err));
         }
     }, [user]);
 
     useEffect(() => {
         if (currentProject) {
-            loadTasksAndEdges(currentProject);
+            fetchTasksAndEdges(currentProject)
+                .then(({ tasks, dependencies }) => {
+                    const newNodes = tasks.map(task => ({
+                        id: task.id.toString(),
+                        data: { label: task.title, completed: task.completed === 1, color: task.color || '#ffffff' },
+                        position: { x: task.posX, y: task.posY },
+                        style: createNodeStyle(task.color || '#ffffff', task.completed === 1),
+                        sourcePosition: 'right',
+                        targetPosition: 'left'
+                    }));
+
+                    const newEdges = dependencies.map(dep => ({
+                        id: dep.id.toString(),
+                        source: dep.from_task.toString(),
+                        target: dep.to_task.toString(),
+                        markerEnd: { type: 'arrowclosed' }
+                    }));
+
+                    setNodes(newNodes);
+                    setEdges(newEdges);
+                })
+                .catch(err => console.error(err));
+
             localStorage.setItem('currentProject', currentProject);
         }
     }, [currentProject]);
 
+    const handleLogout = useCallback(() => {
+        fetch('/api/logout', { method: 'POST', credentials: 'include' })
+            .then(() => setUser(null));
+    }, []);
+
     // --- Project Management ---
-    const loadProjects = async () => {
-        try {
-            const res = await fetch('/api/projects', { credentials: 'include' });
-            const data = await res.json();
-            setProjects(data.projects);
-            if (data.projects.length > 0 && (!currentProject || !data.projects.some(p => p.id.toString() === currentProject))) {
-                const firstProjectId = data.projects[0].id.toString();
-                setCurrentProject(firstProjectId);
-                localStorage.setItem('currentProject', firstProjectId);
-            }
-        } catch (error) {
-            console.error(error);
-        }
-    };
-
-    const loadTasksAndEdges = async (projectId) => {
-        try {
-            const tasksRes = await fetch(`/api/tasks?project_id=${projectId}`, { credentials: 'include' });
-            const tasksData = await tasksRes.json();
-            const newNodes = tasksData.tasks.map(task => ({
-                id: task.id.toString(),
-                data: { label: task.title, completed: task.completed === 1, color: task.color || '#ffffff' },
-                position: { x: task.posX, y: task.posY },
-                style: createNodeStyle(task.color || '#ffffff', task.completed === 1),
-                sourcePosition: 'right',
-                targetPosition: 'left'
-            }));
-
-            const depRes = await fetch(`/api/dependencies?project_id=${projectId}`, { credentials: 'include' });
-            const depData = await depRes.json();
-            const newEdges = depData.dependencies.map(dep => ({
-                id: dep.id.toString(),
-                source: dep.from_task.toString(),
-                target: dep.to_task.toString(),
-                markerEnd: { type: 'arrowclosed' }
-            }));
-
-            setNodes(newNodes);
-            setEdges(newEdges);
-        } catch (error) {
-            console.error(error);
-        }
-    };
-
     const handleCreateProject = useCallback(() => {
         const name = prompt('Enter new project name:');
         if (name) {
-            fetch('/api/projects', {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name })
-            })
-                .then(res => res.json())
+            createProject(name)
                 .then(data => {
-                    loadProjects();
+                    fetchProjects()
+                        .then(projectsData => setProjects(projectsData.projects));
                     setCurrentProject(data.id.toString());
-                });
+                })
+                .catch(err => console.error(err));
         }
     }, []);
 
     const handleDeleteProject = useCallback(() => {
         if (window.confirm("Are you sure you want to delete this project? All data will be lost.")) {
-            fetch(`/api/projects/${currentProject}`, {
-                method: 'DELETE',
-                credentials: 'include'
-            })
-                .then(res => res.json())
+            deleteProject(currentProject)
                 .then(() => {
-                    loadProjects();
+                    fetchProjects()
+                        .then(projectsData => setProjects(projectsData.projects));
                     setCurrentProject('');
-                });
+                })
+                .catch(err => console.error(err));
         }
     }, [currentProject]);
 
@@ -158,18 +165,13 @@ function App() {
 
     const onNodeDragStop = useCallback(
         (event, node) => {
-            fetch(`/api/tasks/${node.id}`, {
-                method: 'PUT',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    title: node.data.label,
-                    posX: node.position.x,
-                    posY: node.position.y,
-                    completed: node.data.completed ? 1 : 0,
-                    color: node.data.color,
-                    project_id: parseInt(currentProject)
-                })
+            updateTask(node.id, {
+                title: node.data.label,
+                posX: node.position.x,
+                posY: node.position.y,
+                completed: node.data.completed ? 1 : 0,
+                color: node.data.color,
+                project_id: parseInt(currentProject)
             });
         },
         [currentProject]
@@ -258,10 +260,7 @@ function App() {
                     const edge = edges.find(e => e.source === selectedUnlinkSource.id && e.target === node.id);
                     if (edge) {
                         setEdges((eds) => eds.filter(e => e.id !== edge.id));
-                        fetch(`/api/dependencies/${edge.id}`, {
-                            method: 'DELETE',
-                            credentials: 'include'
-                        });
+                        deleteDependency(edge.id);
                     }
                     setUnlinkHighlight({ source: selectedUnlinkSource.id, target: node.id });
                     setSelectedUnlinkSource(null);
@@ -299,18 +298,13 @@ function App() {
             )
         );
 
-        fetch(`/api/tasks/${node.id}`, {
-            method: 'PUT',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                title: node.data.label,
-                posX: node.position.x,
-                posY: node.position.y,
-                completed: updatedCompleted ? 1 : 0,
-                color: node.data.color,
-                project_id: parseInt(currentProject)
-            })
+        updateTask(node.id, {
+            title: node.data.label,
+            posX: node.position.x,
+            posY: node.position.y,
+            completed: updatedCompleted ? 1 : 0,
+            color: node.data.color,
+            project_id: parseInt(currentProject)
         });
     }, [currentProject, createNodeStyle]);
 
@@ -327,18 +321,13 @@ function App() {
             )
         );
 
-        fetch(`/api/tasks/${node.id}`, {
-            method: 'PUT',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                title: node.data.label,
-                posX: node.position.x,
-                posY: node.position.y,
-                completed: node.data.completed ? 1 : 0,
-                color,
-                project_id: parseInt(currentProject)
-            })
+        updateTask(node.id, {
+            title: node.data.label,
+            posX: node.position.x,
+            posY: node.position.y,
+            completed: node.data.completed ? 1 : 0,
+            color,
+            project_id: parseInt(currentProject)
         });
     }, [currentProject, createNodeStyle]);
 
@@ -349,26 +338,19 @@ function App() {
                 prev.map(n => n.id === node.id ? { ...n, data: { ...n.data, label: newTitle } } : n)
             );
 
-            fetch(`/api/tasks/${node.id}`, {
-                method: 'PUT',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    title: newTitle,
-                    posX: node.position.x,
-                    posY: node.position.y,
-                    completed: node.data.completed ? 1 : 0,
-                    project_id: parseInt(currentProject)
-                })
+            updateTask(node.id, {
+                title: newTitle,
+                posX: node.position.x,
+                posY: node.position.y,
+                completed: node.data.completed ? 1 : 0,
+                project_id: parseInt(currentProject)
             });
         }
     }, [currentProject]);
 
     const handleDeleteNode = useCallback((node) => {
-        fetch(`/api/tasks/${node.id}`, {
-            method: 'DELETE',
-            credentials: 'include'
-        });
+        deleteTask(node.id);
+        console.log(node.id);
         setNodes(prev => prev.filter(n => n.id !== node.id));
         setEdges(prev => prev.filter(e => e.source !== node.id && e.target !== node.id));
     }, []);
@@ -382,10 +364,7 @@ function App() {
         };
         dfs(node.id);
         toDelete.forEach(nodeId => {
-            fetch(`/api/tasks/${nodeId}`, {
-                method: 'DELETE',
-                credentials: 'include'
-            });
+            deleteTask(nodeId);
         });
         setNodes(prev => prev.filter(n => !toDelete.has(n.id)));
         setEdges(prev => prev.filter(e => !toDelete.has(e.source) && !toDelete.has(e.target)));
@@ -393,18 +372,24 @@ function App() {
 
     // --- Layout Management ---
     const handleAutoArrange = useCallback(() => {
+        const currentNodes = nodesRef.current;
+        const currentEdges = edgesRef.current;
+        const currentProject = currentProjectRef.current;
+
+        console.log(currentProject);
+
         const dagreGraph = new dagre.graphlib.Graph({ directed: true });
         dagreGraph.setGraph({ rankdir: 'LR' });
         dagreGraph.setDefaultEdgeLabel(() => ({}));
         dagreGraph.setDefaultNodeLabel(() => ({}));
         const nodeWidth = 150, nodeHeight = 50;
-        const nodeIds = new Set(nodes.map(n => n.id));
+        const nodeIds = new Set(currentNodes.map(n => n.id));
 
-        nodes.forEach(node => {
+        currentNodes.forEach(node => {
             dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
         });
 
-        edges.forEach(edge => {
+        currentEdges.forEach(edge => {
             if (nodeIds.has(edge.source) && nodeIds.has(edge.target)) {
                 dagreGraph.setEdge(edge.source, edge.target);
             }
@@ -412,7 +397,7 @@ function App() {
 
         dagre.layout(dagreGraph);
 
-        const newNodes = nodes.map(node => {
+        const newNodes = currentNodes.map(node => {
             const dagreNode = dagreGraph.node(node.id);
             if (dagreNode) {
                 return {
@@ -428,64 +413,70 @@ function App() {
 
         setNodes(newNodes);
         newNodes.forEach(node => {
-            fetch(`/api/tasks/${node.id}`, {
-                method: 'PUT',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    title: node.data.label,
-                    posX: node.position.x,
-                    posY: node.position.y,
-                    completed: node.data.completed ? 1 : 0,
-                    project_id: parseInt(currentProject)
-                })
+            updateTask(node.id, {
+                title: node.data.label,
+                posX: node.position.x,
+                posY: node.position.y,
+                completed: node.data.completed ? 1 : 0,
+                project_id: parseInt(currentProject)
             });
         });
-    }, [nodes, edges, currentProject]);
+    }, []);
 
-    // --- Compute visible nodes and next tasks ---
-    const nextTaskIds = new Set();
-    nodes.forEach(node => {
-        if (!node.data.completed) {
-            const incomingEdges = edges.filter(edge => edge.target === node.id);
-            if (
-                incomingEdges.length === 0 ||
-                incomingEdges.every(edge => {
-                    const srcNode = nodes.find(n => n.id === edge.source);
-                    return srcNode && srcNode.data.completed;
-                })
-            ) {
-                nextTaskIds.add(node.id);
+    // --- Memoized Computation of Visible and Rendered Nodes/Edges ---
+    const nextTaskIds = useMemo(() => {
+        const ids = new Set();
+        nodes.forEach(node => {
+            if (!node.data.completed) {
+                const incomingEdges = edges.filter(edge => edge.target === node.id);
+                if (
+                    incomingEdges.length === 0 ||
+                    incomingEdges.every(edge => {
+                        const srcNode = nodes.find(n => n.id === edge.source);
+                        return srcNode && srcNode.data.completed;
+                    })
+                ) {
+                    ids.add(node.id);
+                }
             }
-        }
-    });
+        });
+        return ids;
+    }, [nodes, edges]);
 
-    const visibleNodes = hideCompleted ? nodes.filter(n => !n.data.completed) : nodes;
-    const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
-    const visibleEdges = edges.filter(e => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target));
+    const visibleNodes = useMemo(() => {
+        return hideCompleted ? nodes.filter(n => !n.data.completed) : nodes;
+    }, [nodes, hideCompleted]);
 
-    const renderedNodes = visibleNodes.map(node => {
-        let styleOverrides = { ...node.style };
-        if (unlinkHighlight && (node.id === unlinkHighlight.source || node.id === unlinkHighlight.target)) {
-            styleOverrides = { ...styleOverrides, border: '2px solid red' };
-        } else if (selectedSource && node.id === selectedSource.id) {
-            styleOverrides = { ...styleOverrides, backgroundColor: node.data.color || '#ffffff', border: '2px solid green' };
-        }
-        if (highlightNext) {
-            styleOverrides = nextTaskIds.has(node.id)
-                ? { ...styleOverrides, opacity: 1 }
-                : { ...styleOverrides, opacity: 0.3 };
-        }
-        return { ...node, style: styleOverrides };
-    });
+    const visibleNodeIds = useMemo(() => new Set(visibleNodes.map(n => n.id)), [visibleNodes]);
+
+    const visibleEdges = useMemo(() => {
+        return edges.filter(e => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target));
+    }, [edges, visibleNodeIds]);
+
+    const renderedNodes = useMemo(() => {
+        return visibleNodes.map(node => {
+            let styleOverrides = { ...node.style };
+            if (unlinkHighlight && (node.id === unlinkHighlight.source || node.id === unlinkHighlight.target)) {
+                styleOverrides = { ...styleOverrides, border: '2px solid red' };
+            } else if (selectedSource && node.id === selectedSource.id) {
+                styleOverrides = { ...styleOverrides, backgroundColor: node.data.color || '#ffffff', border: '2px solid green' };
+            }
+            if (highlightNext) {
+                styleOverrides = nextTaskIds.has(node.id)
+                    ? { ...styleOverrides, opacity: 1 }
+                    : { ...styleOverrides, opacity: 0.3 };
+            }
+            return { ...node, style: styleOverrides };
+        });
+    }, [visibleNodes, unlinkHighlight, selectedSource, highlightNext, nextTaskIds]);
 
     if (!user) {
-        return <AuthForm onLogin={setUser} />;
+        return <MemoAuthForm onLogin={setUser} />;
     }
 
     return (
         <div className="h-screen flex flex-col relative" ref={reactFlowWrapper}>
-            <TopBar
+            <MemoTopBar
                 newTaskTitle={newTaskTitle}
                 onNewTaskTitleChange={setNewTaskTitle}
                 onAddNode={addNewNode}
@@ -504,13 +495,11 @@ function App() {
                 onCreateProject={handleCreateProject}
                 onDeleteProject={handleDeleteProject}
                 user={user}
-                onLogout={() => {
-                    fetch('/api/logout', { method: 'POST', credentials: 'include' }).then(() => setUser(null));
-                }}
+                onLogout={handleLogout}
             />
 
             <ReactFlowProvider>
-                <FlowArea
+                <MemoFlowArea
                     nodes={renderedNodes}
                     edges={visibleEdges}
                     onNodesChange={onNodesChange}
@@ -518,7 +507,12 @@ function App() {
                     onNodeClick={handleNodeClick}
                     onNodeContextMenu={(event, node) => {
                         event.preventDefault();
-                        setContextMenu({ visible: true, x: event.clientX, y: event.clientY, node });
+                        // Get the bounding rect of the container
+                        const bounds = reactFlowWrapper.current.getBoundingClientRect();
+                        // Adjust the coordinates to be relative to the container
+                        const x = event.clientX - bounds.left;
+                        const y = event.clientY - bounds.top;
+                        setContextMenu({ visible: true, x, y, node });
                     }}
                     onNodeDragStop={onNodeDragStop}
                     onPaneClick={() => {

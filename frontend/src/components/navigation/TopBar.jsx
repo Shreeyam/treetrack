@@ -43,7 +43,9 @@ const TopBar = memo(({
     onCreateProject,
     onDeleteProject,
     user,
-    onLogout
+    onLogout,
+    generativeMode,
+    setGenerativeMode,
 }) => {
     return (
         <div className="p-2 border-1 border-neutral-200 flex flex-wrap items-center space-x-2">
@@ -86,7 +88,7 @@ const TopBar = memo(({
             <Button variant="outline" onClick={onAutoArrange}>
                 <WandSparkles /> Auto Arrange
             </Button>
-            <Button variant="outline" onClick={() => window.alert("Feature coming soon!")}>
+            <Button variant="outline" onClick={(e) => setGenerativeMode(!generativeMode)}>
                 <Sparkles /> Generate
             </Button>
             <SparklyUpgradeButton onClick={() => window.alert("Feature coming soon!")}>

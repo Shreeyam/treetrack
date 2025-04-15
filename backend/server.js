@@ -9,7 +9,11 @@ const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
 const OpenAI = require("openai");
 
-const openai = new OpenAI();
+// const openai = new OpenAI();
+const openai = new OpenAI({
+  apiKey: process.env.GEMINI_API_KEY,,
+  baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+});
 
 const app = express();
 const port = 3001;
@@ -239,6 +243,10 @@ app.post('/api/tasks', isAuthenticated, (req, res) => {
   );
 });
 
+app.put('/api/tasks', isAuthenticated, (req, res) => {
+  // Update many rows of table
+});
+
 app.put('/api/tasks/:id', isAuthenticated, (req, res) => {
   const { title, posX, posY, completed, color, project_id } = req.body;
   db.run(
@@ -388,7 +396,7 @@ The summary should be a short description of your generated or edited tasks and 
 Ensure that the output adheres strictly to the following JSON schema:
 ${jsonSchema}
 
-Be thoughtful and detailed. The goal is to create a structured blueprint of the steps needed to achieve the goal, with realistic precedence and parallelization. Output only the JSON structure for the tasks and dependencies, adhering strictly to the schema provided. If you are editing existing nodes, only include the ones you have edited in the output.`;
+Be thoughtful and detailed. The goal is to create a structured blueprint of the steps needed to achieve the goal, with realistic precedence and parallelization. Output only the JSON structure for the tasks and dependencies, adhering strictly to the schema provided. If you are editing existing nodes, only include the ones you have edited in the output. Remember to place them so that the graph is readable by adjusting x and y positions, readable left to right. If you want to delete a node, just return it with the same id but set the title to an empty string.`;
 
   // Build the user prompt: include the current state if available.
   const userPrompt = currentState
@@ -405,7 +413,7 @@ Please generate an updated project plan based on this user input: '${userInput}'
 
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-4.1-nano-2025-04-14", // Change model if desired.
+      model: "gemini-2.0-flash", // Change model if desired.
       messages: messages,
       temperature: 0.7,
     });
@@ -419,8 +427,8 @@ Please generate an updated project plan based on this user input: '${userInput}'
     //     console.error("Error writing to file:", err);
     //   }
     // });
-    const responseText = completion.choices[0].message.content;
-
+    const responseText = completion.choices[0].message.content.replace("```json", "").replace("```", "").trim();
+    
     // Post-process the response to affix project, user id
     responseTasks = JSON.parse(responseText);
 

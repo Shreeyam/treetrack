@@ -17,6 +17,10 @@ const MemoAuthForm = React.memo(AuthForm);
 const MemoTopBar = React.memo(TopBar);
 const MemoFlowArea = React.memo(FlowArea);
 
+// --- Constants for Cascading ---
+const CASCADE_OFFSET = 50;
+const VIEWPORT_START_OFFSET = { x: 50, y: 50 }; // Offset from viewport top-left
+
 function App() {
     // --- Authentication States ---
     const [user, setUser] = useState(null);
@@ -26,6 +30,8 @@ function App() {
     const [currentProject, setCurrentProject] = useState(() => localStorage.getItem('currentProject') || '');
     const [nodes, setNodes] = useState([]);
     const [edges, setEdges] = useState([]);
+    const [prevNodes, setPrevNodes] = useState([]);
+    const [prevEdges, setPrevEdges] = useState([]);
     const [selectedSource, setSelectedSource] = useState(null);
     const [selectedUnlinkSource, setSelectedUnlinkSource] = useState(null);
     const [unlinkHighlight, setUnlinkHighlight] = useState(null);
@@ -36,6 +42,8 @@ function App() {
     const [backgroundOn, setBackgroundOn] = useState(true);
     const [selectedNodes, setSelectedNodes] = useState([]);
     const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, node: null });
+    const [generativeMode, setGenerativeMode] = useState(false);
+    const [lastNodePosition, setLastNodePosition] = useState(null); // Initialize to null
 
     // React Flow
     const reactFlowWrapper = useRef(null);
@@ -155,27 +163,24 @@ function App() {
             border: selected ? '2px solid blue' : '1px solid #ccc',
         };
 
-        console.log(draft);
-
         // If the node is a draft, overlay animated diagonal stripes
         if (draft) {
             style = {
                 ...style,
-                // Diagonal stripes using a repeating linear gradient
                 backgroundImage: `repeating-linear-gradient(
-          45deg,
-          rgba(0, 0, 0, 0.1),
-          rgba(0, 0, 0, 0.1) 10px,
-          transparent 10px,
-          transparent 20px
-        )`,
+                    45deg,
+                    rgba(0, 0, 0, 0.1),
+                    rgba(0, 0, 0, 0.1) 10px,
+                    transparent 10px,
+                    transparent 20px
+                )`,
                 backgroundSize: '57px 57px',
                 animation: 'draftAnimation 3s linear infinite',
             };
         }
 
         return style;
-    }, []);
+    }, [blendColors, nodeStyles]);
 
     const onNodesChange = useCallback(
         (changes) =>
@@ -205,17 +210,39 @@ function App() {
     const addNewNode = useCallback(() => {
         if (!newTaskTitle.trim() || !reactFlowInstance || !reactFlowWrapper.current) return;
 
-        const bounds = reactFlowWrapper.current.getBoundingClientRect();
-        const randomScreenX = Math.random() * bounds.width;
-        const randomScreenY = Math.random() * bounds.height;
         const viewport = reactFlowInstance.getViewport();
-        const flowX = (randomScreenX - viewport.x) / viewport.zoom;
-        const flowY = (randomScreenY - viewport.y) / viewport.zoom;
+        const bounds = reactFlowWrapper.current.getBoundingClientRect();
+        let newPosition;
+
+        // Check if last position exists and is visible in the current viewport
+        let isLastPosVisible = false;
+        if (lastNodePosition) {
+            const screenX = lastNodePosition.x * viewport.zoom + viewport.x;
+            const screenY = lastNodePosition.y * viewport.zoom + viewport.y;
+            // Basic visibility check (top-left corner of the last node's position)
+            if (screenX >= 0 && screenX <= bounds.width && screenY >= 0 && screenY <= bounds.height) {
+                isLastPosVisible = true;
+            }
+        }
+
+        if (lastNodePosition && isLastPosVisible) {
+            // Cascade from the last visible position
+            newPosition = {
+                x: lastNodePosition.x + CASCADE_OFFSET,
+                y: lastNodePosition.y + CASCADE_OFFSET
+            };
+        } else {
+            // Start cascade from viewport top-left + offset
+            const flowX = (VIEWPORT_START_OFFSET.x - viewport.x) / viewport.zoom;
+            const flowY = (VIEWPORT_START_OFFSET.y - viewport.y) / viewport.zoom;
+            newPosition = { x: flowX, y: flowY };
+        }
+
 
         const newTask = {
             title: newTaskTitle,
-            posX: flowX,
-            posY: flowY,
+            posX: newPosition.x, // Use calculated position
+            posY: newPosition.y, // Use calculated position
             completed: 0,
             project_id: parseInt(currentProject, 10),
             color: ''
@@ -232,15 +259,16 @@ function App() {
                 const newNode = {
                     id: json.id.toString(),
                     data: { label: newTaskTitle, completed: false, color: '' },
-                    position: { x: newTask.posX, y: newTask.posY },
+                    position: newPosition, // Use calculated position
                     style: createNodeStyle('#ffffff', false),
                     sourcePosition: 'right',
                     targetPosition: 'left'
                 };
                 setNodes(prev => [...prev, newNode]);
                 setNewTaskTitle('');
+                setLastNodePosition(newPosition); // Update the last position
             });
-    }, [newTaskTitle, currentProject, reactFlowInstance, createNodeStyle]);
+    }, [newTaskTitle, currentProject, reactFlowInstance, createNodeStyle, lastNodePosition]); // Add lastNodePosition to dependencies
 
     // --- Edge Management ---
     const onConnect = useCallback(
@@ -367,6 +395,7 @@ function App() {
                 title: newTitle,
                 posX: node.position.x,
                 posY: node.position.y,
+                color: node.data.color,
                 completed: node.data.completed ? 1 : 0,
                 project_id: parseInt(currentProject)
             });
@@ -375,7 +404,6 @@ function App() {
 
     const handleDeleteNode = useCallback((node) => {
         deleteTask(node.id);
-        console.log(node.id);
         setNodes(prev => prev.filter(n => n.id !== node.id));
         setEdges(prev => prev.filter(e => e.source !== node.id && e.target !== node.id));
     }, []);
@@ -395,40 +423,237 @@ function App() {
         setEdges(prev => prev.filter(e => !toDelete.has(e.source) && !toDelete.has(e.target)));
     }, [edges]);
 
-    // TODO: Make it keep the original nodes and edges and just update the state
     const handleGenerativeEdit = useCallback((data) => {
-        console.log("Generative edit data:", data);
-        const newNodes = data.tasks.map(task => ({
-            id: task.id.toString(),
-            data: { label: task.title, completed: task.completed === 1, color: task.color || '#ffffff' },
-            position: { x: task.posX, y: task.posY },
-            style: createNodeStyle(task.color || '#ffffff', task.completed === 1, false, true),
-            sourcePosition: 'right',
-            targetPosition: 'left',
-            draft: true
-        }));
+        // --- Capture previous state BEFORE applying changes ---
+        setPrevNodes(nodesRef.current); // Use refs for the most current state
+        setPrevEdges(edgesRef.current);
 
-        const newEdges = data.dependencies.map(dep => ({
-            id: dep.id.toString(),
-            source: dep.from_task.toString(),
-            target: dep.to_task.toString(),
-            markerEnd: { type: 'arrowclosed' }
-        }));
+        // Create maps for efficient lookup of existing items
+        const prevNodeMap = new Map(nodesRef.current.map(node => [node.id, node]));
+        const prevEdgeMap = new Map(edgesRef.current.map(edge => [edge.id, edge]));
 
-        setNodes(newNodes);
-        setEdges(newEdges);
+        // Compute the current maximum IDs for nodes and edges (assuming numeric IDs in string format)
+        const maxNodeId = nodesRef.current.length > 0
+            ? Math.max(...nodesRef.current.map(node => parseInt(node.id, 10)))
+            : 0;
+        const maxEdgeId = edgesRef.current.length > 0
+            ? Math.max(...edgesRef.current.map(edge => parseInt(edge.id, 10)))
+            : 0;
+
+        let nextNodeId = maxNodeId;
+        let nextEdgeId = maxEdgeId;
+
+        // Create a mapping from the incoming task IDs to the assigned IDs.
+        // This is needed so that dependencies referencing new tasks can be updated accordingly.
+        const taskIdMapping = {};
+
+        // Process tasks to create the updated nodes. For new tasks (i.e. not found in prevNodeMap),
+        // assign a new auto-incremented ID.
+        const updatedNodes = data.tasks.map(task => {
+            const origId = task.id.toString();
+            // If the task title is empty (or whitespace-only), it signals deletion.
+            if (task.title.trim() === "") {
+                return { id: origId, delete: true };
+            }
+
+            // Determine if this task is new. If it's not in the previous state, assign a new ID.
+            let assignedId;
+            if (prevNodeMap.has(origId)) {
+                assignedId = origId;
+            } else {
+                // Avoid reassigning a new ID if we've already done so in this update
+                if (taskIdMapping[origId]) {
+                    assignedId = taskIdMapping[origId];
+                } else {
+                    nextNodeId += 1;
+                    assignedId = nextNodeId.toString();
+                    taskIdMapping[origId] = assignedId;
+                }
+            }
+
+            // Also map existing tasks for dependency lookups
+            if (!taskIdMapping[origId]) {
+                taskIdMapping[origId] = assignedId;
+            }
+
+            const existingNode = prevNodeMap.get(origId);
+            const isDraft = true; // Mark all AI suggestions as draft initially
+            // Preserve the original position if the node exists; otherwise, use the incoming position.
+            const position = existingNode ? existingNode.position : { x: task.posX, y: task.posY };
+            const color = (task.color && task.color.trim() !== "")
+                ? task.color
+                : (existingNode ? existingNode.data.color : '#ffffff');
+            const completed = task.completed === 1;
+
+            return {
+                id: assignedId,
+                data: { label: task.title, completed, color },
+                position, // Use determined position
+                style: createNodeStyle(color, completed, false, isDraft),
+                sourcePosition: 'right',
+                targetPosition: 'left',
+                draft: isDraft
+            };
+        });
+
+        // Process dependencies to create the updated edges.
+        // For each dependency, if it does not exist in the current state, assign a new, auto-incremented ID.
+        // Also update the source and target IDs using the taskIdMapping.
+        const updatedEdges = data.dependencies.map(dep => {
+            const origEdgeId = dep.id.toString();
+            let assignedEdgeId;
+            if (prevEdgeMap.has(origEdgeId)) {
+                assignedEdgeId = origEdgeId;
+            } else {
+                nextEdgeId += 1;
+                assignedEdgeId = nextEdgeId.toString();
+            }
+            // Update source and target based on task mapping (if the task was new).
+            const source = taskIdMapping[dep.from_task.toString()] || dep.from_task.toString();
+            const target = taskIdMapping[dep.to_task.toString()] || dep.to_task.toString();
+
+            return {
+                id: assignedEdgeId,
+                source,
+                target,
+                markerEnd: { type: 'arrowclosed' },
+                draft: true
+            };
+        });
+
+        // Merge updated nodes with the current nodes, respecting deletions
+        setNodes((prevNodes) => {
+            const nodeMap = new Map(prevNodes.map(node => [node.id, node]));
+            updatedNodes.forEach(node => {
+                if (node.delete) {
+                    // Remove the node if flagged for deletion
+                    nodeMap.delete(node.id);
+                } else {
+                    // Add or update the node
+                    nodeMap.set(node.id, node);
+                }
+            });
+            return Array.from(nodeMap.values());
+        });
+
+        // Merge updated edges with the current edges similarly.
+        setEdges((prevEdges) => {
+            const edgeMap = new Map(prevEdges.map(edge => [edge.id, edge]));
+            updatedEdges.forEach(edge => {
+                edgeMap.set(edge.id, edge);
+            });
+            return Array.from(edgeMap.values());
+        });
+
+    }, [createNodeStyle]);
 
 
-    }
-        , [createNodeStyle]);
+    const handleAcceptChanges = useCallback(async () => {
+        const currentNodes = nodesRef.current;
+        const currentEdges = edgesRef.current;
+        const previousNodesMap = new Map(prevNodes.map(node => [node.id, node]));
+        const previousEdgesMap = new Map(prevEdges.map(edge => [edge.id, edge]));
+        const projectId = parseInt(currentProjectRef.current, 10);
+
+        const promises = [];
+
+        currentNodes.forEach(node => {
+            if (node.draft) {
+                const existingNode = previousNodesMap.get(node.id);
+                const taskData = {
+                    title: node.data.label,
+                    posX: node.position.x,
+                    posY: node.position.y,
+                    completed: node.data.completed ? 1 : 0,
+                    color: node.data.color,
+                    project_id: projectId
+                };
+
+                if (existingNode) {
+                    promises.push(updateTask(node.id, taskData));
+                } else {
+                    promises.push(
+                        fetch('/api/tasks', {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(taskData)
+                        }).then(res => res.json())
+                    );
+                }
+            }
+        });
+
+        prevNodes.forEach(prevNode => {
+            if (!currentNodes.some(currentNode => currentNode.id === prevNode.id)) {
+                promises.push(deleteTask(prevNode.id));
+            }
+        });
+
+        currentEdges.forEach(edge => {
+            if (edge.draft) {
+                const existingEdge = previousEdgesMap.get(edge.id);
+                if (!existingEdge) {
+                    promises.push(
+                        fetch('/api/dependencies', {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                from_task: parseInt(edge.source, 10),
+                                to_task: parseInt(edge.target, 10),
+                                project_id: projectId
+                            })
+                        }).then(res => res.json())
+                    );
+                }
+            }
+        });
+
+        prevEdges.forEach(prevEdge => {
+            if (!currentEdges.some(currentEdge => currentEdge.id === prevEdge.id)) {
+                promises.push(deleteDependency(prevEdge.id));
+            }
+        });
+
+        try {
+            setEdges(currentEdges.map(e => e.draft ? { ...e, draft: false } : e));
+            setNodes(currentNodes.map(n => {
+                if (n.draft) {
+                    return {
+                        ...n,
+                        draft: false,
+                        style: createNodeStyle(n.data.color, n.data.completed, n.selected, false)
+                    };
+                }
+                return n;
+            }));
+
+            await Promise.all(promises);
+
+            setPrevNodes([]);
+            setPrevEdges([]);
+
+        } catch (error) {
+            setNodes(prevNodes);
+            setEdges(prevEdges);
+        }
+
+    }, [prevNodes, prevEdges, createNodeStyle, currentProjectRef, nodesRef, edgesRef]);
+
+    const handleRejectChanges = useCallback(() => {
+        setNodes(prevNodes);
+        setEdges(prevEdges);
+
+        setPrevNodes([]);
+        setPrevEdges([]);
+    }, [prevNodes, prevEdges]);
 
     // --- Layout Management ---
     const handleAutoArrange = useCallback(() => {
         const currentNodes = nodesRef.current;
         const currentEdges = edgesRef.current;
         const currentProject = currentProjectRef.current;
-
-        console.log(currentProject);
 
         const dagreGraph = new dagre.graphlib.Graph({ directed: true });
         dagreGraph.setGraph({ rankdir: 'LR' });
@@ -465,10 +690,12 @@ function App() {
 
         setNodes(newNodes);
         newNodes.forEach(node => {
+            !node.data.draft &&
             updateTask(node.id, {
                 title: node.data.label,
                 posX: node.position.x,
                 posY: node.position.y,
+                color: node.data.color,
                 completed: node.data.completed ? 1 : 0,
                 project_id: parseInt(currentProject)
             });
@@ -548,8 +775,10 @@ function App() {
                 onDeleteProject={handleDeleteProject}
                 user={user}
                 onLogout={handleLogout}
+                generativeMode={generativeMode}
+                setGenerativeMode={setGenerativeMode}
             />
-            <ChatBot setIsOpen={true} nodes={nodes} dependencies={edges} currentProject={currentProject} handleGenerativeEdit={handleGenerativeEdit} />
+            <ChatBot isOpen={generativeMode} nodes={nodes} dependencies={edges} currentProject={currentProject} handleGenerativeEdit={handleGenerativeEdit} handleAcceptNodeChanges={handleAcceptChanges} handleRejectNodeChanges={handleRejectChanges} />
             <ReactFlowProvider>
                 <MemoFlowArea
                     nodes={renderedNodes}
@@ -559,9 +788,7 @@ function App() {
                     onNodeClick={handleNodeClick}
                     onNodeContextMenu={(event, node) => {
                         event.preventDefault();
-                        // Get the bounding rect of the container
                         const bounds = reactFlowWrapper.current.getBoundingClientRect();
-                        // Adjust the coordinates to be relative to the container
                         const x = event.clientX - bounds.left;
                         const y = event.clientY - bounds.top;
                         setContextMenu({ visible: true, x, y, node });

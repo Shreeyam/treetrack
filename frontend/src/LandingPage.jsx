@@ -10,7 +10,8 @@ import {
     ChevronRight,
     PlayCircle,
     Leaf,
-    ExternalLink
+    ExternalLink,
+    Sparkle
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -23,7 +24,7 @@ export default function TreetrackLanding() {
         <div className="flex flex-col min-h-screen bg-background">
             {/* Navigation */}
             <header className="sticky top-0 z-50 w-full border-b bg-background/90 backdrop-blur">
-                <div className="container flex h-16 items-center justify-between px-4 md:px-6">
+                <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
                     <div className="flex items-center gap-2">
                         <Leaf className="h-6 w-6 text-primary" />
                         <span className="text-xl font-bold">Treetrack</span>
@@ -45,28 +46,31 @@ export default function TreetrackLanding() {
 
             {/* Hero Section */}
             <section className="w-full py-12 md:py-24 lg:py-32">
-                <div className="container px-4 md:px-6">
-                    <div className="flex flex-col items-center space-y-4 text-center">
+                <div className="container mx-auto px-4 md:px-6 flex flex-col md:flex-row items-center md:justify-between">
+
+                    {/* Left Column - Text and Buttons */}
+                    <div className="w-full md:w-2/3 flex flex-col items-center text-center md:items-start md:text-left space-y-4">
                         <h1 className="text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl lg:text-6xl">
                             Organize your thoughts, <br className="hidden sm:inline" />
-                            <span className="text-primary"><ReactTyped
-                                strings={[
-                                    'connect your ideas',
-                                    'capture your insights',
-                                    'identify critical paths',
-                                    'streamline your workflow',
-                                ]}
-                                typeSpeed={40}
-                                backSpeed={30}
-                                backDelay={1500}
-                                loop
-                                smartBackspace
-                            /></span>
+                            <span className="text-primary">
+                                <ReactTyped
+                                    strings={[
+                                        'connect your ideas',
+                                        'identify critical paths',
+                                        'streamline your workflow',
+                                    ]}
+                                    typeSpeed={40}
+                                    backSpeed={30}
+                                    backDelay={1500}
+                                    loop
+                                    smartBackspace
+                                />
+                            </span>
                         </h1>
                         <p className="max-w-[700px] text-muted-foreground md:text-xl">
                             Graph-based productivity that adapts to your thinking process. Visualize connections between tasks, ideas, and projects.
                         </p>
-                        <div className="flex flex-col sm:flex-row gap-4 mt-8">
+                        <div className="flex flex-col sm:flex-row gap-4 mt-8 w-full justify-center md:justify-start">
                             <Button size="lg" className="gap-2">
                                 Start free trial <ArrowRight className="h-4 w-4" />
                             </Button>
@@ -75,18 +79,34 @@ export default function TreetrackLanding() {
                             </Button>
                         </div>
                     </div>
+
+                    {/* Right Column - Video Demo */}
+                    <div className="w-full md:w-1/3 mt-8 md:mt-0 flex justify-center">
+                        {/* Adjust the video attributes as needed: "muted" for autoplay to work in most browsers */}
+                        <video
+                            className="w-full max-w-lg"
+                            src="path_to_your_video.mp4"
+                            autoPlay
+                            muted
+                            loop
+                            playsInline
+                        >
+                            Your browser does not support the video tag.
+                        </video>
+                    </div>
                 </div>
             </section>
 
+
             {/* Feature Highlight */}
             <section id="features" className="w-full py-12 md:py-24 bg-muted/50">
-                <div className="container px-4 md:px-6">
+                <div className="container mx-auto px-4 md:px-6">
                     <div className="grid gap-6 lg:grid-cols-3 lg:gap-12 items-start">
                         <div className="flex flex-col gap-2">
-                            <Brain className="h-10 w-10 text-primary" />
+                            <Network className="h-10 w-10 text-primary" />
                             <h3 className="text-xl font-bold">Knowledge Graph</h3>
                             <p className="text-muted-foreground">
-                                Visualize connections between your tasks, notes, and projects with our intuitive graph interface.
+                                Visualize dependencies between your tasks, notes, and projects with our intuitive graph interface.
                             </p>
                         </div>
                         <div className="flex flex-col gap-2">
@@ -97,10 +117,10 @@ export default function TreetrackLanding() {
                             </p>
                         </div>
                         <div className="flex flex-col gap-2">
-                            <PanelLeft className="h-10 w-10 text-primary" />
-                            <h3 className="text-xl font-bold">Flexible Workspaces</h3>
+                            <Sparkle className="h-10 w-10 text-primary" />
+                            <h3 className="text-xl font-bold">AI Enabled</h3>
                             <p className="text-muted-foreground">
-                                Customize your workspace with multiple views including Kanban boards, calendars, and graph views.
+                                Use generative AI to make edits, provide overviews, and [...]
                             </p>
                         </div>
                     </div>
@@ -108,7 +128,7 @@ export default function TreetrackLanding() {
             </section>
 
             {/* Agile Critique Feature Section */}
-            <section className="w-full py-12 md:py-24 bg-muted">
+            {/* <section className="w-full py-12 md:py-24 bg-muted">
                 <div className="container px-4 md:px-6">
                     <div className="max-w-3xl mx-auto text-center">
                         <h2 className="text-3xl font-bold tracking-tighter md:text-4xl">Stop Forcing Agile on Your Complex Workflows</h2>
@@ -131,11 +151,11 @@ export default function TreetrackLanding() {
                         </div>
                     </div>
                 </div>
-            </section>
+            </section> */}
 
             {/* Demo Section */}
             <section id="demo" className="w-full py-12 md:py-24">
-                <div className="container px-4 md:px-6">
+                <div className="container mx-auto px-4 md:px-6">
                     <div className="flex flex-col items-center justify-center space-y-4 text-center">
                         <div className="space-y-2">
                             <h2 className="text-3xl font-bold tracking-tighter md:text-4xl">See Treetrack in action</h2>
@@ -156,7 +176,7 @@ export default function TreetrackLanding() {
             </section>
 
             {/* Testimonial */}
-            <section className="w-full py-12 md:py-24 bg-muted/50">
+            {/* <section className="w-full py-12 md:py-24 bg-muted/50">
                 <div className="container px-4 md:px-6">
                     <div className="mx-auto max-w-2xl text-center">
                         <blockquote className="text-xl font-medium leading-relaxed text-muted-foreground">
@@ -168,11 +188,11 @@ export default function TreetrackLanding() {
                         </div>
                     </div>
                 </div>
-            </section>
+            </section> */}
 
             {/* Pricing Section */}
-            <section id="pricing" className="w-full py-12 md:py-24">
-                <div className="container px-4 md:px-6">
+            <section id="pricing" className="w-full py-12 md:py-24 bg-muted/50">
+                <div className="container mx-auto px-4 md:px-6">
                     <div className="mx-auto max-w-md text-center mb-10">
                         <h2 className="text-3xl font-bold tracking-tighter md:text-4xl">Simple, transparent pricing</h2>
                         <p className="mt-4 text-muted-foreground">
@@ -191,7 +211,7 @@ export default function TreetrackLanding() {
                             </CardHeader>
                             <CardContent className="flex-1">
                                 <ul className="space-y-2">
-                                    {["5 projects", "Basic graph visualization", "1 GB storage", "Personal dashboard"].map((feature) => (
+                                    {["5 projects", "Basic graph visualization", "Personal dashboard"].map((feature) => (
                                         <li key={feature} className="flex items-center gap-2">
                                             <CheckCircle className="h-4 w-4 text-primary" />
                                             <span>{feature}</span>
@@ -213,18 +233,17 @@ export default function TreetrackLanding() {
                                 <CardTitle>Pro</CardTitle>
                                 <CardDescription>For serious productivity enthusiasts.</CardDescription>
                                 <div className="mt-4">
-                                    <span className="text-3xl font-bold">$4</span>
+                                    <span className="text-3xl font-bold">$5</span>
                                     <span className="text-muted-foreground"> /month</span>
                                 </div>
                             </CardHeader>
                             <CardContent className="flex-1">
                                 <ul className="space-y-2">
                                     {[
+                                        "Generative mode",
                                         "Unlimited projects",
-                                        "Advanced graph visualization",
+                                        "Critical path analysis",
                                         "Team collaboration",
-                                        "Priority support",
-                                        "Custom templates"
                                     ].map((feature) => (
                                         <li key={feature} className="flex items-center gap-2">
                                             <CheckCircle className="h-4 w-4 text-primary" />
@@ -252,11 +271,8 @@ export default function TreetrackLanding() {
                                 <ul className="space-y-2">
                                     {[
                                         "Unlimited everything",
-                                        "Advanced security",
                                         "Admin dashboard",
-                                        "API access",
                                         "Dedicated support",
-                                        "Custom integrations",
                                         "On-premise option"
                                     ].map((feature) => (
                                         <li key={feature} className="flex items-center gap-2">
@@ -276,7 +292,7 @@ export default function TreetrackLanding() {
 
             {/* CTA Section */}
             <section className="w-full py-12 md:py-24 bg-primary text-primary-foreground">
-                <div className="container px-4 md:px-6">
+                <div className="container mx-auto px-4 md:px-6">
                     <div className="flex flex-col items-center justify-center space-y-4 text-center">
                         <div className="space-y-2">
                             <h2 className="text-3xl font-bold tracking-tighter md:text-4xl">Ready to transform your workflow?</h2>
@@ -288,7 +304,7 @@ export default function TreetrackLanding() {
                             <Button size="lg" variant="secondary" className="gap-2">
                                 Start free trial <ArrowRight className="h-4 w-4" />
                             </Button>
-                            <Button variant="outline" size="lg" className="gap-2 bg-transparent border-primary-foreground text-primary-foreground hover:bg-primary-foreground/10">
+                            <Button variant="outline" size="lg" className="gap-2 bg-transparent border-primary-foreground text-primary-foreground hover:bg-primary-foreground/10 hover:text-white">
                                 Book a demo <ChevronRight className="h-4 w-4" />
                             </Button>
                         </div>
@@ -298,47 +314,26 @@ export default function TreetrackLanding() {
 
             {/* Footer */}
             <footer className="w-full py-6 md:py-12 border-t">
-                <div className="container px-4 md:px-6">
-                    <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-4">
+                <div className="container mx-auto px-4 md:px-6">
+                    {/* Simplified Footer Grid */}
+                    <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2 items-center">
+                        {/* Logo and Description */}
                         <div className="space-y-4">
                             <div className="flex items-center gap-2">
-                                <Network className="h-6 w-6 text-primary" />
+                                <Leaf className="h-6 w-6 text-primary" /> {/* Changed Icon to Leaf */}
                                 <span className="text-lg font-bold">Treetrack</span>
                             </div>
                             <p className="text-sm text-muted-foreground">
                                 Graph-based productivity software that visualizes your workflow.
                             </p>
                         </div>
-                        <div className="space-y-4">
-                            <h4 className="text-sm font-bold">Product</h4>
-                            <ul className="space-y-2 text-sm">
-                                <li><a href="#" className="hover:underline">Features</a></li>
-                                <li><a href="#" className="hover:underline">Pricing</a></li>
-                                <li><a href="#" className="hover:underline">Integrations</a></li>
-                                <li><a href="#" className="hover:underline">Roadmap</a></li>
-                            </ul>
-                        </div>
-                        <div className="space-y-4">
-                            <h4 className="text-sm font-bold">Company</h4>
-                            <ul className="space-y-2 text-sm">
-                                <li><a href="#" className="hover:underline">About</a></li>
-                                <li><a href="#" className="hover:underline">Blog</a></li>
-                                <li><a href="#" className="hover:underline">Careers</a></li>
-                                <li><a href="#" className="hover:underline">Contact</a></li>
-                            </ul>
-                        </div>
-                        <div className="space-y-4">
-                            <h4 className="text-sm font-bold">Legal</h4>
-                            <ul className="space-y-2 text-sm">
-                                <li><a href="#" className="hover:underline">Privacy</a></li>
-                                <li><a href="#" className="hover:underline">Terms</a></li>
-                                <li><a href="#" className="hover:underline">Security</a></li>
-                            </ul>
+
+                        {/* Copyright - Moved to be alongside the logo on larger screens */}
+                        <div className="text-center md:text-right text-sm text-muted-foreground">
+                            © {new Date().getFullYear()} Treetrack. All rights reserved.
                         </div>
                     </div>
-                    <div className="mt-10 border-t pt-6 text-center text-sm text-muted-foreground">
-                        © {new Date().getFullYear()} Treetrack. All rights reserved.
-                    </div>
+                    {/* Removed the detailed link columns and the separate copyright div */}
                 </div>
             </footer>
         </div>

@@ -149,7 +149,7 @@ const TopBar = memo(({
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem disabled className="opacity-50">
-                            Treetrack v0.0.5<br />(2025-04-12)
+                            Treetrack v0.0.5<br />{BUILD_DATE}
                         </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>

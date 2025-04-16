@@ -20,6 +20,8 @@ const MemoFlowArea = React.memo(FlowArea);
 // --- Constants for Cascading ---
 const CASCADE_OFFSET = 50;
 const VIEWPORT_START_OFFSET = { x: 50, y: 50 }; // Offset from viewport top-left
+const NODE_WIDTH = 150; // Approximate node width for bounds checking
+const NODE_HEIGHT = 50; // Approximate node height for bounds checking
 
 function App() {
     // --- Authentication States ---
@@ -44,6 +46,8 @@ function App() {
     const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, node: null });
     const [generativeMode, setGenerativeMode] = useState(false);
     const [lastNodePosition, setLastNodePosition] = useState(null); // Initialize to null
+    const [cascadeCount, setCascadeCount] = useState(0); // Track cascade steps
+    const [cascadeStartPoint, setCascadeStartPoint] = useState(null); // Track start of current cascade sequence
 
     // React Flow
     const reactFlowWrapper = useRef(null);
@@ -214,35 +218,52 @@ function App() {
         const bounds = reactFlowWrapper.current.getBoundingClientRect();
         let newPosition;
 
+        // Calculate viewport top-left in flow coordinates (base for initial cascade)
+        const flowStartX = (VIEWPORT_START_OFFSET.x - viewport.x) / viewport.zoom;
+        const flowStartY = (VIEWPORT_START_OFFSET.y - viewport.y) / viewport.zoom;
+        const initialCascadePoint = { x: flowStartX, y: flowStartY };
+
         // Check if last position exists and is visible in the current viewport
         let isLastPosVisible = false;
         if (lastNodePosition) {
             const screenX = lastNodePosition.x * viewport.zoom + viewport.x;
             const screenY = lastNodePosition.y * viewport.zoom + viewport.y;
-            // Basic visibility check (top-left corner of the last node's position)
-            if (screenX >= 0 && screenX <= bounds.width && screenY >= 0 && screenY <= bounds.height) {
+            // Basic visibility check (allow node to be partially visible)
+            if (screenX + NODE_WIDTH > 0 && screenX < bounds.width &&
+                screenY + NODE_HEIGHT > 0 && screenY < bounds.height) {
                 isLastPosVisible = true;
             }
         }
 
         if (lastNodePosition && isLastPosVisible) {
-            // Cascade from the last visible position
-            newPosition = {
-                x: lastNodePosition.x + CASCADE_OFFSET,
-                y: lastNodePosition.y + CASCADE_OFFSET
-            };
+            if (cascadeCount < 4) {
+                // Continue current cascade
+                newPosition = {
+                    x: lastNodePosition.x + CASCADE_OFFSET,
+                    y: lastNodePosition.y + CASCADE_OFFSET
+                };
+                setCascadeCount(prev => prev + 1);
+            } else {
+                // Reset cascade: Start new sequence shifted down from the previous start
+                const startPoint = cascadeStartPoint || initialCascadePoint; // Fallback just in case
+                newPosition = {
+                    x: startPoint.x,
+                    y: startPoint.y + CASCADE_OFFSET
+                };
+                setCascadeStartPoint(newPosition); // This is the start for the *next* sequence
+                setCascadeCount(1);
+            }
         } else {
-            // Start cascade from viewport top-left + offset
-            const flowX = (VIEWPORT_START_OFFSET.x - viewport.x) / viewport.zoom;
-            const flowY = (VIEWPORT_START_OFFSET.y - viewport.y) / viewport.zoom;
-            newPosition = { x: flowX, y: flowY };
+            // Start a fresh cascade (either first node, or last node was off-screen)
+            newPosition = initialCascadePoint;
+            setCascadeStartPoint(initialCascadePoint); // Mark the start of this sequence
+            setCascadeCount(1);
         }
-
 
         const newTask = {
             title: newTaskTitle,
-            posX: newPosition.x, // Use calculated position
-            posY: newPosition.y, // Use calculated position
+            posX: newPosition.x, // Use final calculated position
+            posY: newPosition.y, // Use final calculated position
             completed: 0,
             project_id: parseInt(currentProject, 10),
             color: ''
@@ -259,16 +280,26 @@ function App() {
                 const newNode = {
                     id: json.id.toString(),
                     data: { label: newTaskTitle, completed: false, color: '' },
-                    position: newPosition, // Use calculated position
+                    position: newPosition, // Use final calculated position
                     style: createNodeStyle('#ffffff', false),
                     sourcePosition: 'right',
                     targetPosition: 'left'
                 };
                 setNodes(prev => [...prev, newNode]);
                 setNewTaskTitle('');
-                setLastNodePosition(newPosition); // Update the last position
+                setLastNodePosition(newPosition); // Update the last position with the final position used
             });
-    }, [newTaskTitle, currentProject, reactFlowInstance, createNodeStyle, lastNodePosition]); // Add lastNodePosition to dependencies
+    }, [
+        newTaskTitle,
+        currentProject,
+        reactFlowInstance,
+        createNodeStyle,
+        lastNodePosition,
+        cascadeCount, 
+        setCascadeCount,
+        cascadeStartPoint, 
+        setCascadeStartPoint 
+    ]);
 
     // --- Edge Management ---
     const onConnect = useCallback(

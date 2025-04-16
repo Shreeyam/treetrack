@@ -13,7 +13,7 @@ import {
     ExternalLink,
     Sparkle
 } from 'lucide-react';
-
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { ReactTyped } from 'react-typed';
@@ -38,8 +38,12 @@ export default function TreetrackLanding() {
                         <a href="#pricing" className="text-sm font-medium hover:underline underline-offset-4">Pricing</a>
                     </nav>
                     <div className="flex items-center gap-4">
-                        <Button variant="ghost" size="sm">Log in</Button>
-                        <Button size="sm"><ExternalLink /> Open App</Button>
+                        <Link to="/login">
+                            <Button variant="ghost" size="sm">Log in</Button>
+                        </Link>
+                        <Link to="/app">
+                            <Button size="sm"><ExternalLink /> Open App</Button>
+                        </Link>
                     </div>
                 </div>
             </header>

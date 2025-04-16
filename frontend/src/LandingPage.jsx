@@ -31,12 +31,12 @@ export default function TreetrackLanding() {
                         <div className="inline-block rounded-lg bg-primary px-3 py-1 text-xs text-white ">
                             Research Preview
                         </div>
+                        <div className="ml-2 gap-4 md:flex hidden">
+                            <a href="#features" className="text-sm font-medium hover:underline underline-offset-4">Features</a>
+                            <a href="#demo" className="text-sm font-medium hover:underline underline-offset-4">Demo</a>
+                            <a href="#pricing" className="text-sm font-medium hover:underline underline-offset-4">Pricing</a>
+                        </div>
                     </div>
-                    <nav className="hidden md:flex items-center gap-6">
-                        <a href="#features" className="text-sm font-medium hover:underline underline-offset-4">Features</a>
-                        <a href="#demo" className="text-sm font-medium hover:underline underline-offset-4">Demo</a>
-                        <a href="#pricing" className="text-sm font-medium hover:underline underline-offset-4">Pricing</a>
-                    </nav>
                     <div className="flex items-center gap-4">
                         <Link to="/login">
                             <Button variant="ghost" size="sm">Log in</Button>

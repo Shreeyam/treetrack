@@ -2,13 +2,17 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
+import Logo from '@/components/brand/logo';
+import { Link } from 'react-router';
 
-const AuthForm = ({ onLogin }) => {
-    const [isRegister, setIsRegister] = useState(false);
+const AuthForm = ({ onLogin, isRegister, setIsRegister }) => {
     const [loginUsername, setLoginUsername] = useState('');
     const [loginPassword, setLoginPassword] = useState('');
     const [registerUsername, setRegisterUsername] = useState('');
     const [registerPassword, setRegisterPassword] = useState('');
+    const [firstName, setFirstName] = useState('');
+    const [lastName, setLastName] = useState('');
+    const [email, setEmail] = useState('');
 
     const handleLogin = async () => {
         try {
@@ -35,7 +39,13 @@ const AuthForm = ({ onLogin }) => {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: registerUsername, password: registerPassword })
+                body: JSON.stringify({ 
+                    username: registerUsername, 
+                    password: registerPassword,
+                    firstName: firstName,
+                    lastName: lastName,
+                    email: email
+                })
             });
             const data = await res.json();
             if (data.username) {
@@ -48,15 +58,36 @@ const AuthForm = ({ onLogin }) => {
         }
     };
 
+    const handleForgotPassword = () => {
+        alert('Forgot Password functionality not yet implemented.');
+    };
+
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
             <Card className="w-full max-w-md">
                 <CardHeader>
+                    <Logo />
                     <h2 className="text-xl font-semibold">{isRegister ? 'Register' : 'Login'}</h2>
                 </CardHeader>
                 <CardContent className="space-y-4">
                     {isRegister ? (
                         <>
+                            <Input
+                                placeholder="First Name"
+                                value={firstName}
+                                onChange={(e) => setFirstName(e.target.value)}
+                            />
+                            <Input
+                                placeholder="Last Name"
+                                value={lastName}
+                                onChange={(e) => setLastName(e.target.value)}
+                            />
+                            <Input
+                                placeholder="Email"
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                            />
                             <Input
                                 placeholder="Username"
                                 value={registerUsername}
@@ -69,12 +100,16 @@ const AuthForm = ({ onLogin }) => {
                                 onChange={(e) => setRegisterPassword(e.target.value)}
                                 onKeyDown={(e) => { if (e.key === 'Enter') handleRegister(); }}
                             />
-                            <Button onClick={handleRegister}>Register</Button>
-                            <div className="text-sm">
-                                Already have an account?{' '}
-                                <Button variant="link" onClick={() => setIsRegister(false)}>
-                                    Login here
-                                </Button>
+                            <Button onClick={handleRegister} className="w-full">Register</Button>
+                            <div className="flex flex-col space-y-2 text-sm">
+                                <div className="text-center">
+                                    Already have an account?{' '}
+                                    <Link to="/login">
+                                        <Button variant="link" className="p-0 h-auto" onClick={() => setIsRegister(false)}>
+                                            Login here
+                                        </Button>
+                                    </Link>
+                                </div>
                             </div>
                         </>
                     ) : (
@@ -91,12 +126,21 @@ const AuthForm = ({ onLogin }) => {
                                 onChange={(e) => setLoginPassword(e.target.value)}
                                 onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
                             />
-                            <Button onClick={handleLogin}>Login</Button>
-                            <div className="text-sm">
-                                Don&apos;t have an account?{' '}
-                                <Button variant="link" onClick={() => setIsRegister(true)}>
-                                    Register here
-                                </Button>
+                            <Button onClick={handleLogin} className="w-full">Login</Button>
+                            <div className="flex flex-col space-y-2 text-sm">
+                                <div className="flex justify-end">
+                                    <Button variant="link" className="p-0 h-auto" onClick={handleForgotPassword}>
+                                        Forgot Password?
+                                    </Button>
+                                </div>
+                                <div className="text-center">
+                                    Don&apos;t have an account?{' '}
+                                    <Link to="/register">
+                                        <Button variant="link" className="p-0 h-auto" onClick={() => setIsRegister(true)}>
+                                            Register here
+                                        </Button>
+                                    </Link>
+                                </div>
                             </div>
                         </>
                     )}

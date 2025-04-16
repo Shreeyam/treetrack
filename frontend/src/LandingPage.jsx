@@ -18,7 +18,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { ReactTyped } from 'react-typed';
 
-import './globals.css'
+import '@/globals.css'
+import Logo from '@/components/brand/logo';
 export default function TreetrackLanding() {
     return (
         <div className="flex flex-col min-h-screen bg-background">
@@ -26,8 +27,7 @@ export default function TreetrackLanding() {
             <header className="sticky top-0 z-50 w-full border-b bg-background/90 backdrop-blur">
                 <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
                     <div className="flex items-center gap-2">
-                        <Leaf className="h-6 w-6 text-primary" />
-                        <span className="text-xl font-bold">Treetrack</span>
+                        <Logo/>
                         <div className="inline-block rounded-lg bg-primary px-3 py-1 text-xs text-white ">
                             Research Preview
                         </div>
@@ -40,6 +40,9 @@ export default function TreetrackLanding() {
                     <div className="flex items-center gap-4">
                         <Link to="/login">
                             <Button variant="ghost" size="sm">Log in</Button>
+                        </Link>
+                        <Link to="/register">
+                            <Button variant="ghost" size="sm">Register</Button>
                         </Link>
                         <Link to="/app">
                             <Button size="sm"><ExternalLink /> Open App</Button>
@@ -267,7 +270,7 @@ export default function TreetrackLanding() {
                                 <CardTitle>Enterprise</CardTitle>
                                 <CardDescription>For organizations with advanced needs.</CardDescription>
                                 <div className="mt-4">
-                                    <span className="text-3xl font-bold">$19</span>
+                                    <span className="text-3xl font-bold">$10</span>
                                     <span className="text-muted-foreground"> /user/month</span>
                                 </div>
                             </CardHeader>

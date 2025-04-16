@@ -88,12 +88,17 @@ const TopBar = memo(({
             <Button variant="outline" onClick={onAutoArrange}>
                 <WandSparkles /> Auto Arrange
             </Button>
-            <Button variant="outline" onClick={(e) => setGenerativeMode(!generativeMode)}>
-                <Sparkles /> Generate
-            </Button>
-            <SparklyUpgradeButton onClick={() => window.alert("Feature coming soon!")}>
-                <Gem className="text-purple-500" /> Upgrade
-            </SparklyUpgradeButton>
+            {
+                user.premium ? (
+                    <Button variant="outline" onClick={(e) => setGenerativeMode(!generativeMode)}>
+                        <Sparkles /> Generate
+                    </Button>
+                ) : (
+                    <SparklyUpgradeButton onClick={() => window.alert("Feature coming soon!")}>
+                        <Gem className="text-purple-500" /> Upgrade
+                    </SparklyUpgradeButton>
+                )
+            }
 
             <div className="ml-auto flex items-center space-x-2">
                 <select
@@ -120,7 +125,6 @@ const TopBar = memo(({
                 <Button variant="destructive" onClick={onDeleteProject}>
                     <Trash />
                 </Button>
-
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button variant="outline">

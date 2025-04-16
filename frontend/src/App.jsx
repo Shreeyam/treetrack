@@ -11,6 +11,7 @@ import FlowArea from '@/components/flow/FlowArea';
 import { nodeStyles } from '@/components/flow/styles';
 import { fetchUser, fetchProjects, createProject, deleteProject, fetchTasksAndEdges, updateTask, deleteTask, deleteDependency } from './api';
 import ChatBot from './components/misc/chatbot';
+import { createAddNewNode } from './utils/nodeFunctions';
 
 // Memoize imported components
 const MemoAuthForm = React.memo(AuthForm);
@@ -211,95 +212,10 @@ function App() {
         [currentProject]
     );
 
-    const addNewNode = useCallback(() => {
-        if (!newTaskTitle.trim() || !reactFlowInstance || !reactFlowWrapper.current) return;
-
-        const viewport = reactFlowInstance.getViewport();
-        const bounds = reactFlowWrapper.current.getBoundingClientRect();
-        let newPosition;
-
-        // Calculate viewport top-left in flow coordinates (base for initial cascade)
-        const flowStartX = (VIEWPORT_START_OFFSET.x - viewport.x) / viewport.zoom;
-        const flowStartY = (VIEWPORT_START_OFFSET.y - viewport.y) / viewport.zoom;
-        const initialCascadePoint = { x: flowStartX, y: flowStartY };
-
-        // Check if last position exists and is visible in the current viewport
-        let isLastPosVisible = false;
-        if (lastNodePosition) {
-            const screenX = lastNodePosition.x * viewport.zoom + viewport.x;
-            const screenY = lastNodePosition.y * viewport.zoom + viewport.y;
-            // Basic visibility check (allow node to be partially visible)
-            if (screenX + NODE_WIDTH > 0 && screenX < bounds.width &&
-                screenY + NODE_HEIGHT > 0 && screenY < bounds.height) {
-                isLastPosVisible = true;
-            }
-        }
-
-        if (lastNodePosition && isLastPosVisible) {
-            if (cascadeCount < 4) {
-                // Continue current cascade
-                newPosition = {
-                    x: lastNodePosition.x + CASCADE_OFFSET,
-                    y: lastNodePosition.y + CASCADE_OFFSET
-                };
-                setCascadeCount(prev => prev + 1);
-            } else {
-                // Reset cascade: Start new sequence shifted down from the previous start
-                const startPoint = cascadeStartPoint || initialCascadePoint; // Fallback just in case
-                newPosition = {
-                    x: startPoint.x,
-                    y: startPoint.y + CASCADE_OFFSET
-                };
-                setCascadeStartPoint(newPosition); // This is the start for the *next* sequence
-                setCascadeCount(1);
-            }
-        } else {
-            // Start a fresh cascade (either first node, or last node was off-screen)
-            newPosition = initialCascadePoint;
-            setCascadeStartPoint(initialCascadePoint); // Mark the start of this sequence
-            setCascadeCount(1);
-        }
-
-        const newTask = {
-            title: newTaskTitle,
-            posX: newPosition.x, // Use final calculated position
-            posY: newPosition.y, // Use final calculated position
-            completed: 0,
-            project_id: parseInt(currentProject, 10),
-            color: ''
-        };
-
-        fetch('/api/tasks', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newTask)
-        })
-            .then(res => res.json())
-            .then(json => {
-                const newNode = {
-                    id: json.id.toString(),
-                    data: { label: newTaskTitle, completed: false, color: '' },
-                    position: newPosition, // Use final calculated position
-                    style: createNodeStyle('#ffffff', false),
-                    sourcePosition: 'right',
-                    targetPosition: 'left'
-                };
-                setNodes(prev => [...prev, newNode]);
-                setNewTaskTitle('');
-                setLastNodePosition(newPosition); // Update the last position with the final position used
-            });
-    }, [
-        newTaskTitle,
-        currentProject,
-        reactFlowInstance,
-        createNodeStyle,
-        lastNodePosition,
-        cascadeCount, 
-        setCascadeCount,
-        cascadeStartPoint, 
-        setCascadeStartPoint 
-    ]);
+    const addNewNode = useCallback(
+        createAddNewNode({ newTaskTitle, currentProject, reactFlowInstance, reactFlowWrapper, lastNodePosition, cascadeCount, cascadeStartPoint, createNodeStyle, setCascadeCount, setCascadeStartPoint, setLastNodePosition, setNewTaskTitle, setNodes }),
+        [newTaskTitle, currentProject, reactFlowInstance, reactFlowWrapper, lastNodePosition, cascadeCount, cascadeStartPoint, createNodeStyle]
+    );
 
     // --- Edge Management ---
     const onConnect = useCallback(

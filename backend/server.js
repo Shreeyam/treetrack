@@ -108,6 +108,14 @@ function isAuthenticated(req, res, next) {
   return res.status(401).json({ error: "Not authenticated" });
 }
 
+// Middleware to check if the user is a premium user.
+function isPremium(req, res, next) {
+  if (req.session && req.session.user && req.session.user.premium) {
+    return next();
+  }
+  return res.status(403).json({ error: "Premium access required" });
+}
+
 // Rate limiter for the login endpoint.
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -154,8 +162,8 @@ app.post('/api/login', loginLimiter, (req, res) => {
     try {
       const match = await bcrypt.compare(password, user.password);
       if (match) {
-        req.session.user = { id: user.id, username: user.username };
-        res.json({ id: user.id, username: user.username });
+        req.session.user = { id: user.id, username: user.username, premium: user.premium };
+        res.json({ id: user.id, username: user.username, premium: user.premium });
       } else {
         res.status(400).json({ error: "Invalid credentials" });
       }
@@ -418,15 +426,6 @@ Please generate an updated project plan based on this user input: '${userInput}'
       temperature: 0.7,
     });
 
-    // console.log(completion.choices[0].message);
-    // // Save to text file
-    // const fs = require('fs');
-    // const filePath = 'output.txt';
-    // fs.writeFile(filePath, JSON.stringify(completion, null, 2), (err) => {
-    //   if (err) {
-    //     console.error("Error writing to file:", err);
-    //   }
-    // });
     const responseText = completion.choices[0].message.content.replace("```json", "").replace("```", "").trim();
     
     // Post-process the response to affix project, user id
@@ -451,8 +450,8 @@ Please generate an updated project plan based on this user input: '${userInput}'
   }
 }
 
-// New endpoint to generate a project structure using OpenAI.
-app.post('/api/generate', isAuthenticated, async (req, res) => {
+// Endpoint to generate a project structure using OpenAI.
+app.post('/api/generate', isAuthenticated, isPremium, async (req, res) => {
   // Accept topic, project_id, and an optional current_state from the request body.
   const { user_input: user_input, project_id, current_state } = req.body;
   if (!user_input || !project_id) {

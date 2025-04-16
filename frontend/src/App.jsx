@@ -11,7 +11,8 @@ import FlowArea from '@/components/flow/FlowArea';
 import { nodeStyles } from '@/components/flow/styles';
 import { fetchUser, fetchProjects, createProject, deleteProject, fetchTasksAndEdges, updateTask, deleteTask, deleteDependency } from './api';
 import ChatBot from './components/misc/chatbot';
-import { createAddNewNode } from './utils/nodeFunctions';
+import { createAddNewNode, mapWithChangeDetection} from './utils/nodeFunctions';
+
 
 // Memoize imported components
 const MemoAuthForm = React.memo(AuthForm);
@@ -27,7 +28,7 @@ const NODE_HEIGHT = 50; // Approximate node height for bounds checking
 function App() {
     // --- Authentication States ---
     const [user, setUser] = useState(null);
-
+    
     // --- Main App States ---
     const [projects, setProjects] = useState([]);
     const [currentProject, setCurrentProject] = useState(() => localStorage.getItem('currentProject') || '');
@@ -58,6 +59,8 @@ function App() {
     const edgesRef = useRef(edges);
     const currentProjectRef = useRef(currentProject);
 
+    // Memos
+    const memoBlendColors = useCallback((c1, c2, ratio) => blendColors(c1, c2, ratio), []);
     useEffect(() => {
         nodesRef.current = nodes;
     }, [nodes]);
@@ -69,7 +72,7 @@ function App() {
     useEffect(() => {
         currentProjectRef.current = currentProject;
     }, [currentProject]);
-
+    
     // --- Session Management ---
     useEffect(() => {
         fetchUser()
@@ -158,7 +161,7 @@ function App() {
 
     // --- Node Management ---
     const createNodeStyle = useCallback((color, completed, selected, draft) => {
-        const backgroundColor = completed ? blendColors(color, '#e0e0e0', 0.5) : color;
+        const backgroundColor = completed ? memoBlendColors(color, '#e0e0e0', 0.5) : color;
 
         // Base style for the node
         let style = {
@@ -185,16 +188,48 @@ function App() {
         }
 
         return style;
-    }, [blendColors, nodeStyles]);
+    }, [blendColors, memoBlendColors]);
 
     const onNodesChange = useCallback(
         (changes) =>
-            setNodes((nds) =>
-                applyNodeChanges(changes, nds).map(node => ({
-                    ...node,
-                    style: createNodeStyle(node.data.color, node.data.completed, node.selected, node.draft)
-                }))
-            ),
+            setNodes((prev) => {
+                if (!changes.length) return prev;
+
+                /** Build a quick lookup table for the changed nodes */
+                const changed = new Map();
+                changes.forEach((c) => changed.set(c.id, c));
+
+                let mutated = false;
+
+                const next = prev.map((node) => {
+                    const change = changed.get(node.id);
+                    if (!change) return node; // untouched → keep original reference
+
+                    mutated = true;
+
+                    /** Let React‑Flow merge the positional / selection changes */
+                    const updated = applyNodeChanges([change], [node])[0];
+
+                    /** Re‑compute style *only* if something visual actually changed */
+                    const needsNewStyle =
+                        "selected" in change ||
+                        (change.type === "dimensions" && node.data.completed !== updated.data.completed);
+
+                    return needsNewStyle
+                        ? {
+                            ...updated,
+                            style: createNodeStyle(
+                                updated.data.color,
+                                updated.data.completed,
+                                updated.selected,
+                                updated.draft
+                            ),
+                        }
+                        : updated;
+                });
+
+                return mutated ? next : prev;
+            }),
         [createNodeStyle]
     );
 
@@ -638,14 +673,14 @@ function App() {
         setNodes(newNodes);
         newNodes.forEach(node => {
             !node.data.draft &&
-            updateTask(node.id, {
-                title: node.data.label,
-                posX: node.position.x,
-                posY: node.position.y,
-                color: node.data.color,
-                completed: node.data.completed ? 1 : 0,
-                project_id: parseInt(currentProject)
-            });
+                updateTask(node.id, {
+                    title: node.data.label,
+                    posX: node.position.x,
+                    posY: node.position.y,
+                    color: node.data.color,
+                    completed: node.data.completed ? 1 : 0,
+                    project_id: parseInt(currentProject)
+                });
         });
     }, []);
 
@@ -676,25 +711,70 @@ function App() {
     const visibleNodeIds = useMemo(() => new Set(visibleNodes.map(n => n.id)), [visibleNodes]);
 
     const visibleEdges = useMemo(() => {
-        return edges.filter(e => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target));
-    }, [edges, visibleNodeIds]);
+        if (!hideCompleted) return edges;
+
+        const filtered = edges.filter(
+            e => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target)
+        );
+        // same trick: return original if nothing was dropped
+        return filtered.length === edges.length ? edges : filtered;
+    }, [edges, hideCompleted, visibleNodeIds]);
 
     const renderedNodes = useMemo(() => {
-        return visibleNodes.map(node => {
-            let styleOverrides = { ...node.style };
-            if (unlinkHighlight && (node.id === unlinkHighlight.source || node.id === unlinkHighlight.target)) {
-                styleOverrides = { ...styleOverrides, border: '2px solid red' };
-            } else if (selectedSource && node.id === selectedSource.id) {
-                styleOverrides = { ...styleOverrides, backgroundColor: node.data.color || '#ffffff', border: '2px solid green' };
+        return mapWithChangeDetection(visibleNodes, node => {
+            // compute the one‑off style override
+            let nextStyle = node.style;
+            if (
+                unlinkHighlight &&
+                (node.id === unlinkHighlight.source || node.id === unlinkHighlight.target)
+            ) {
+                nextStyle = { ...nextStyle, border: '2px solid red' };
+            } else if (selectedSource && selectedSource.id === node.id) {
+                nextStyle = {
+                    ...nextStyle,
+                    backgroundColor: node.data.color || '#ffffff',
+                    border: '2px solid green',
+                };
+            } else if (highlightNext) {
+                nextStyle = nextTaskIds.has(node.id)
+                    ? { ...nextStyle, opacity: 1 }
+                    : { ...nextStyle, opacity: 0.3 };
             }
-            if (highlightNext) {
-                styleOverrides = nextTaskIds.has(node.id)
-                    ? { ...styleOverrides, opacity: 1 }
-                    : { ...styleOverrides, opacity: 0.3 };
-            }
-            return { ...node, style: styleOverrides };
+
+            // only return a new object if style really changed
+            return nextStyle === node.style
+                ? node
+                : { ...node, style: nextStyle };
         });
-    }, [visibleNodes, unlinkHighlight, selectedSource, highlightNext, nextTaskIds]);
+    }, [
+        visibleNodes,
+        unlinkHighlight,
+        selectedSource,
+        highlightNext,
+        nextTaskIds,
+    ]);
+
+    const handleNodeContextMenu = useCallback((event, node) => {
+        event.preventDefault();
+        const bounds = reactFlowWrapper.current.getBoundingClientRect();
+        const x = event.clientX - bounds.left;
+        const y = event.clientY - bounds.top;
+        setContextMenu({ visible: true, x, y, node });
+    }, []);
+
+    const handlePaneClick = useCallback(() => {
+        setSelectedSource(null);
+        setSelectedUnlinkSource(null);
+        setContextMenu({ visible: false, x: 0, y: 0, node: null });
+    }, []);
+
+    const handleSelectionChange = useCallback(({ nodes }) => {
+        setSelectedNodes(nodes || []);
+    }, []);
+
+    const handleCloseContextMenu = useCallback(() => {
+        setContextMenu({ visible: false, x: 0, y: 0, node: null });
+    }, []);
 
     if (!user) {
         return <MemoAuthForm onLogin={setUser} />;
@@ -733,27 +813,17 @@ function App() {
                     onNodesChange={onNodesChange}
                     onConnect={onConnect}
                     onNodeClick={handleNodeClick}
-                    onNodeContextMenu={(event, node) => {
-                        event.preventDefault();
-                        const bounds = reactFlowWrapper.current.getBoundingClientRect();
-                        const x = event.clientX - bounds.left;
-                        const y = event.clientY - bounds.top;
-                        setContextMenu({ visible: true, x, y, node });
-                    }}
+                    onNodeContextMenu={handleNodeContextMenu}
                     onNodeDragStop={onNodeDragStop}
-                    onPaneClick={() => {
-                        setSelectedSource(null);
-                        setSelectedUnlinkSource(null);
-                        setContextMenu({ visible: false, x: 0, y: 0, node: null });
-                    }}
-                    onSelectionChange={({ nodes }) => setSelectedNodes(nodes || [])}
+                    onPaneClick={handlePaneClick}
+                    onSelectionChange={handleSelectionChange}
                     contextMenu={contextMenu}
                     onToggleCompleted={handleToggleCompleted}
                     onEditNode={handleEditNode}
                     onDeleteNode={handleDeleteNode}
                     onDeleteSubtree={handleDeleteSubtree}
                     onUpdateNodeColor={handleUpdateNodeColor}
-                    onCloseContextMenu={() => setContextMenu({ visible: false, x: 0, y: 0, node: null })}
+                    onCloseContextMenu={handleCloseContextMenu}
                     minimapOn={minimapOn}
                     backgroundOn={backgroundOn}
                     onInit={setReactFlowInstance}

@@ -1,97 +1,107 @@
 export function createAddNewNode({ newTaskTitle, currentProject, reactFlowInstance, reactFlowWrapper, lastNodePosition, cascadeCount, cascadeStartPoint, createNodeStyle, setCascadeCount, setCascadeStartPoint, setLastNodePosition, setNewTaskTitle, setNodes }) {
-  // Constants for cascading logic
-  const CASCADE_OFFSET = 50;
-  const VIEWPORT_START_OFFSET = { x: 50, y: 50 };
-  const NODE_WIDTH = 150;
-  const NODE_HEIGHT = 50;
+    // Constants for cascading logic
+    const CASCADE_OFFSET = 50;
+    const VIEWPORT_START_OFFSET = { x: 50, y: 50 };
+    const NODE_WIDTH = 150;
+    const NODE_HEIGHT = 50;
 
-  return () => {
-    if (!newTaskTitle.trim() || !reactFlowInstance || !reactFlowWrapper.current) return;
+    return () => {
+        if (!newTaskTitle.trim() || !reactFlowInstance || !reactFlowWrapper.current) return;
 
-    const viewport = reactFlowInstance.getViewport();
-    const bounds = reactFlowWrapper.current.getBoundingClientRect();
-    let newPosition;
+        const viewport = reactFlowInstance.getViewport();
+        const bounds = reactFlowWrapper.current.getBoundingClientRect();
+        let newPosition;
 
-    // Calculate viewport top-left in flow coordinates
-    const flowStartX = (VIEWPORT_START_OFFSET.x - viewport.x) / viewport.zoom;
-    const flowStartY = (VIEWPORT_START_OFFSET.y - viewport.y) / viewport.zoom;
-    const initialCascadePoint = { x: flowStartX, y: flowStartY };
+        // Calculate viewport top-left in flow coordinates
+        const flowStartX = (VIEWPORT_START_OFFSET.x - viewport.x) / viewport.zoom;
+        const flowStartY = (VIEWPORT_START_OFFSET.y - viewport.y) / viewport.zoom;
+        const initialCascadePoint = { x: flowStartX, y: flowStartY };
 
-    // Check last node visibility
-    let isLastPosVisible = false;
-    if (lastNodePosition) {
-      const screenX = lastNodePosition.x * viewport.zoom + viewport.x;
-      const screenY = lastNodePosition.y * viewport.zoom + viewport.y;
-      if (
-        screenX + NODE_WIDTH > 0 && screenX < bounds.width &&
-        screenY + NODE_HEIGHT > 0 && screenY < bounds.height
-      ) {
-        isLastPosVisible = true;
-      }
-    }
+        // Check last node visibility
+        let isLastPosVisible = false;
+        if (lastNodePosition) {
+            const screenX = lastNodePosition.x * viewport.zoom + viewport.x;
+            const screenY = lastNodePosition.y * viewport.zoom + viewport.y;
+            if (
+                screenX + NODE_WIDTH > 0 && screenX < bounds.width &&
+                screenY + NODE_HEIGHT > 0 && screenY < bounds.height
+            ) {
+                isLastPosVisible = true;
+            }
+        }
 
-    // Decide new position based on cascade state
-    if (lastNodePosition && isLastPosVisible) {
-      // compute next diagonal candidate and test its visibility
-      const candidatePos = {
-        x: lastNodePosition.x + CASCADE_OFFSET,
-        y: lastNodePosition.y + CASCADE_OFFSET
-      };
-      const candScreenX = candidatePos.x * viewport.zoom + viewport.x;
-      const candScreenY = candidatePos.y * viewport.zoom + viewport.y;
-      const isCandidateVisible =
-        candScreenX + NODE_WIDTH > 0 && candScreenX < bounds.width &&
-        candScreenY + NODE_HEIGHT > 0 && candScreenY < bounds.height;
+        // Decide new position based on cascade state
+        if (lastNodePosition && isLastPosVisible) {
+            // compute next diagonal candidate and test its visibility
+            const candidatePos = {
+                x: lastNodePosition.x + CASCADE_OFFSET,
+                y: lastNodePosition.y + CASCADE_OFFSET
+            };
+            const candScreenX = candidatePos.x * viewport.zoom + viewport.x;
+            const candScreenY = candidatePos.y * viewport.zoom + viewport.y;
+            const isCandidateVisible =
+                candScreenX + NODE_WIDTH > 0 && candScreenX < bounds.width &&
+                candScreenY + NODE_HEIGHT > 0 && candScreenY < bounds.height;
 
-      if (isCandidateVisible) {
-        // keep cascading diagonally
-        newPosition = candidatePos;
-        setCascadeCount(prev => prev + 1);
-      } else {
-        // start a new row cascade
-        const startPoint = cascadeStartPoint || initialCascadePoint;
-        newPosition = {
-          x: startPoint.x,
-          y: startPoint.y + CASCADE_OFFSET
+            if (isCandidateVisible) {
+                // keep cascading diagonally
+                newPosition = candidatePos;
+                setCascadeCount(prev => prev + 1);
+            } else {
+                // start a new row cascade
+                const startPoint = cascadeStartPoint || initialCascadePoint;
+                newPosition = {
+                    x: startPoint.x,
+                    y: startPoint.y + CASCADE_OFFSET
+                };
+                setCascadeStartPoint(newPosition);
+                setCascadeCount(1);
+            }
+        } else {
+            newPosition = initialCascadePoint;
+            setCascadeStartPoint(initialCascadePoint);
+            setCascadeCount(1);
+        }
+
+        // Create new task on server
+        const newTask = {
+            title: newTaskTitle,
+            posX: newPosition.x,
+            posY: newPosition.y,
+            completed: 0,
+            project_id: parseInt(currentProject, 10),
+            color: ''
         };
-        setCascadeStartPoint(newPosition);
-        setCascadeCount(1);
-      }
-    } else {
-      newPosition = initialCascadePoint;
-      setCascadeStartPoint(initialCascadePoint);
-      setCascadeCount(1);
-    }
 
-    // Create new task on server
-    const newTask = {
-      title: newTaskTitle,
-      posX: newPosition.x,
-      posY: newPosition.y,
-      completed: 0,
-      project_id: parseInt(currentProject, 10),
-      color: ''
+        fetch('/api/tasks', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newTask)
+        })
+            .then(res => res.json())
+            .then(json => {
+                const newNode = {
+                    id: json.id.toString(),
+                    data: { label: newTaskTitle, completed: false, color: '' },
+                    position: newPosition,
+                    style: createNodeStyle('#ffffff', false),
+                    sourcePosition: 'right',
+                    targetPosition: 'left'
+                };
+                setNodes(prev => [...prev, newNode]);
+                setNewTaskTitle('');
+                setLastNodePosition(newPosition);
+            });
     };
+}
 
-    fetch('/api/tasks', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newTask)
-    })
-    .then(res => res.json())
-    .then(json => {
-      const newNode = {
-        id: json.id.toString(),
-        data: { label: newTaskTitle, completed: false, color: '' },
-        position: newPosition,
-        style: createNodeStyle('#ffffff', false),
-        sourcePosition: 'right',
-        targetPosition: 'left'
-      };
-      setNodes(prev => [...prev, newNode]);
-      setNewTaskTitle('');
-      setLastNodePosition(newPosition);
+export function mapWithChangeDetection(prevArray, mapper) {
+    let mutated = false;
+    const next = prevArray.map(item => {
+        const updated = mapper(item);
+        if (updated !== item) mutated = true;
+        return updated;
     });
-  };
+    return mutated ? next : prevArray;
 }

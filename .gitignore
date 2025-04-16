@@ -136,3 +136,4 @@ dist
 .pnp.*
 
 *.db
+python_backend/.idea/workspace.xml

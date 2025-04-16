@@ -466,6 +466,13 @@ app.post('/api/generate', isAuthenticated, isPremium, async (req, res) => {
   }
 });
 
+app.post('/api/log-error', express.json(), (req, res) => {
+  const { message, stack, componentStack, url, userAgent, timestamp } = req.body;
+  // TODO: persist to a database for error tracking
+  console.error(`[Client Error] ${timestamp} @ ${url}\n${message}\n${stack}\nComponent stack:\n${componentStack}\nUser-Agent: ${userAgent}`);
+  res.sendStatus(204);
+});
+
 // --- Start the server ---
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);

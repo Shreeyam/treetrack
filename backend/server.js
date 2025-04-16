@@ -8,6 +8,7 @@ const bcrypt = require('bcrypt');
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
 const OpenAI = require("openai");
+require('dotenv').config();
 
 // const openai = new OpenAI();
 const openai = new OpenAI({

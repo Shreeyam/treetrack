@@ -3,12 +3,10 @@ import React from 'react';
 export default class ReloadOnErrorBoundary extends React.Component {
   state = { hasError: false };
 
-  // 1) Tell React an error happened so it won’t continue rendering the broken tree
   static getDerivedStateFromError(error) {
     return { hasError: true };
   }
 
-  // 2) Log & report the error, then reload once
   componentDidCatch(error, info) {
     console.error('Unhandled error caught by ReloadOnErrorBoundary:', error, info);
 
@@ -36,8 +34,20 @@ export default class ReloadOnErrorBoundary extends React.Component {
   }
 
   render() {
-    // You could render a fallback UI here if you want—
-    // but since we’re reloading, just render children.
+    if (this.state.hasError) {
+      const hasReloaded = sessionStorage.getItem('hasReloaded');
+      if (hasReloaded) {
+        // After reload and still failing: render fallback UI
+        return (
+          <div style={{ padding: '2rem', textAlign: 'center' }}>
+            <h1>Something went wrong.</h1>
+            <p>Please try refreshing the page or contact support if the issue persists.</p>
+            <button onClick={() => window.location.reload()}>Retry</button>
+          </div>
+        );
+      }
+    }
+
     return this.props.children;
   }
 }

@@ -11,7 +11,7 @@ import FlowArea from '@/components/flow/FlowArea';
 import { nodeStyles } from '@/components/flow/styles';
 import { fetchUser, fetchProjects, createProject, deleteProject, fetchTasksAndEdges, updateTask, deleteTask, deleteDependency } from './api';
 import ChatBot from './components/misc/chatbot';
-import { createAddNewNode, mapWithChangeDetection} from './utils/nodeFunctions';
+import { createAddNewNode, mapWithChangeDetection } from './utils/nodeFunctions';
 
 
 // Memoize imported components
@@ -28,7 +28,7 @@ const NODE_HEIGHT = 50; // Approximate node height for bounds checking
 function App() {
     // --- Authentication States ---
     const [user, setUser] = useState(null);
-    
+
     // --- Main App States ---
     const [projects, setProjects] = useState([]);
     const [currentProject, setCurrentProject] = useState(() => localStorage.getItem('currentProject') || '');
@@ -72,7 +72,7 @@ function App() {
     useEffect(() => {
         currentProjectRef.current = currentProject;
     }, [currentProject]);
-    
+
     // --- Session Management ---
     useEffect(() => {
         fetchUser()
@@ -433,8 +433,8 @@ function App() {
         // assign a new auto-incremented ID.
         const updatedNodes = data.tasks.map(task => {
             const origId = task.id.toString();
-            // If the task title is empty (or whitespace-only), it signals deletion.
-            if (task.title.trim() === "") {
+            // If the task has a delete flag set to true, mark it for deletion.
+            if (task.delete) {
                 return { id: origId, delete: true };
             }
 
@@ -483,6 +483,11 @@ function App() {
         // Also update the source and target IDs using the taskIdMapping.
         const updatedEdges = data.dependencies.map(dep => {
             const origEdgeId = dep.id.toString();
+            // If the dependency has a delete flag set to true, mark it for deletion.
+            if (dep.delete) {
+                return { id: origEdgeId, delete: true };
+            }
+
             let assignedEdgeId;
             if (prevEdgeMap.has(origEdgeId)) {
                 assignedEdgeId = origEdgeId;
@@ -494,6 +499,15 @@ function App() {
             const source = taskIdMapping[dep.from_task.toString()] || dep.from_task.toString();
             const target = taskIdMapping[dep.to_task.toString()] || dep.to_task.toString();
 
+            // Ensure the source and target nodes for this edge actually exist in the final node list
+            const sourceNodeExists = updatedNodes.some(n => n.id === source && !n.delete) || prevNodeMap.has(source);
+            const targetNodeExists = updatedNodes.some(n => n.id === target && !n.delete) || prevNodeMap.has(target);
+
+            // If either the source or target node is being deleted or doesn't exist, mark the edge for deletion too.
+            if (!sourceNodeExists || !targetNodeExists) {
+                return { id: assignedEdgeId, delete: true };
+            }
+
             return {
                 id: assignedEdgeId,
                 source,
@@ -503,32 +517,36 @@ function App() {
             };
         });
 
-        // Merge updated nodes with the current nodes, respecting deletions
+        // ---- Merge updated nodes ----
         setNodes((prevNodes) => {
-            const nodeMap = new Map(prevNodes.map(node => [node.id, node]));
-            updatedNodes.forEach(node => {
-                if (node.delete) {
-                    // Remove the node if flagged for deletion
-                    nodeMap.delete(node.id);
-                } else {
-                    // Add or update the node
-                    nodeMap.set(node.id, node);
-                }
+            const nodeMap = new Map(prevNodes.map((n) => [n.id, n]));
+            updatedNodes.forEach((node) => {
+                if (node.delete) nodeMap.delete(node.id);
+                else nodeMap.set(node.id, node);
             });
-            return Array.from(nodeMap.values());
+            return [...nodeMap.values()];
         });
 
-        // Merge updated edges with the current edges similarly.
+        // ---- Merge updated edges ----
         setEdges((prevEdges) => {
-            const edgeMap = new Map(prevEdges.map(edge => [edge.id, edge]));
-            updatedEdges.forEach(edge => {
-                edgeMap.set(edge.id, edge);
+            const edgeMap = new Map(prevEdges.map((e) => [e.id, e]));
+            updatedEdges.forEach((edge) => {
+                console.log(edge.delete);
+                if (edge.delete) edgeMap.delete(edge.id);
+                else edgeMap.set(edge.id, edge);
             });
-            return Array.from(edgeMap.values());
+
+            // 🔧 FIX starts here
+            const survivingNodeIds = new Set(
+                [...edgeMap.values()]  // use any collection of nodes you already have
+                    .reduce((ids, e) => ids.add(e.source).add(e.target), new Set())
+            );
+            return [...edgeMap.values()].filter(
+                (edge) =>
+                    survivingNodeIds.has(edge.source) && survivingNodeIds.has(edge.target)
+            );
         });
-
     }, [createNodeStyle]);
-
 
     const handleAcceptChanges = useCallback(async () => {
         const currentNodes = nodesRef.current;

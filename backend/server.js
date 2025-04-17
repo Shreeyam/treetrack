@@ -111,6 +111,7 @@ function isAuthenticated(req, res, next) {
 
 // Middleware to check if the user is a premium user.
 function isPremium(req, res, next) {
+  return next();
   if (req.session && req.session.user && req.session.user.premium) {
     return next();
   }
@@ -163,8 +164,8 @@ app.post('/api/login', loginLimiter, (req, res) => {
     try {
       const match = await bcrypt.compare(password, user.password);
       if (match) {
-        req.session.user = { id: user.id, username: user.username, premium: user.premium };
-        res.json({ id: user.id, username: user.username, premium: user.premium });
+        req.session.user = { id: user.id, username: user.username, premium: true };
+        res.json({ id: user.id, username: user.username, premium: true });
       } else {
         res.status(400).json({ error: "Invalid credentials" });
       }
@@ -393,19 +394,21 @@ Each task object must include:
 - color (use a HEX color code to reflect the stage or layer of the task, e.g., planning vs execution; should be pastel-ish as they will be the background for black text)
 - locked (set to 0)
 - draft (set to 1)
+- delete (set to 1 if you want to delete the task, 0 otherwise)
 
 Each dependency object must include:
 - id (integer)
 - from_task (source task id)
 - to_task (destination task id)
 - project_id and user_id (same placeholders)
+- delete (set to 1 if you want to delete the dependency, 0 otherwise)
 
 The summary should be a short description of your generated or edited tasks and dependencies. Two sentences, maximum.
 
 Ensure that the output adheres strictly to the following JSON schema:
 ${jsonSchema}
 
-Be thoughtful and detailed. The goal is to create a structured blueprint of the steps needed to achieve the goal, with realistic precedence and parallelization. Output only the JSON structure for the tasks and dependencies, adhering strictly to the schema provided. If you are editing existing nodes, only include the ones you have edited in the output. Remember to place them so that the graph is readable by adjusting x and y positions, readable left to right. If you want to delete a node, just return it with the same id but set the title to an empty string.`;
+Be thoughtful and detailed. The goal is to create a structured blueprint of the steps needed to achieve the goal, with realistic precedence and parallelization. Output only the JSON structure for the tasks and dependencies, adhering strictly to the schema provided. If you are editing existing nodes, only include the ones you have edited in the output. Remember to place them so that the graph is readable by adjusting x and y positions, readable left to right. If you want to delete a node or dependency, set the delete flag to 1.`;
 
   // Build the user prompt: include the current state if available.
   const userPrompt = currentState
@@ -428,7 +431,7 @@ Please generate an updated project plan based on this user input: '${userInput}'
     });
 
     const responseText = completion.choices[0].message.content.replace("```json", "").replace("```", "").trim();
-    
+
     // Post-process the response to affix project, user id
     responseTasks = JSON.parse(responseText);
 

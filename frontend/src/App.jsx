@@ -551,95 +551,157 @@ function App() {
     const handleAcceptChanges = useCallback(async () => {
         const currentNodes = nodesRef.current;
         const currentEdges = edgesRef.current;
-        const previousNodesMap = new Map(prevNodes.map(node => [node.id, node]));
-        const previousEdgesMap = new Map(prevEdges.map(edge => [edge.id, edge]));
         const projectId = parseInt(currentProjectRef.current, 10);
+        console.log(projectId);
+        console.log(currentProjectRef.current);
+        // Build maps of the previous state for quick lookups
+        const prevNodesMap = new Map(prevNodes.map((n) => [n.id, n]));
+        const prevEdgesMap = new Map(prevEdges.map((e) => [e.id, e]));
 
-        const promises = [];
+        // Buckets for the bulk payload
+        const createdTasks = [];
+        const updatedTasks = [];
+        const deletedTaskIds = [];
 
-        currentNodes.forEach(node => {
+        const createdDeps = [];
+        const updatedDeps = [];
+        const deletedDepIds = [];
+
+        // 1) Classify nodes
+        for (let node of currentNodes) {
+            const taskBody = {
+                title: node.data.label,
+                posX: node.position.x,
+                posY: node.position.y,
+                completed: node.data.completed ? 1 : 0,
+                color: node.data.color,
+                project_id: projectId,
+            };
+
             if (node.draft) {
-                const existingNode = previousNodesMap.get(node.id);
-                const taskData = {
-                    title: node.data.label,
-                    posX: node.position.x,
-                    posY: node.position.y,
-                    completed: node.data.completed ? 1 : 0,
-                    color: node.data.color,
-                    project_id: projectId
-                };
-
-                if (existingNode) {
-                    promises.push(updateTask(node.id, taskData));
+                // did this exist before?
+                if (prevNodesMap.has(node.id)) {
+                    updatedTasks.push({ id: parseInt(node.id, 10), ...taskBody });
                 } else {
-                    promises.push(
-                        fetch('/api/tasks', {
-                            method: 'POST',
-                            credentials: 'include',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(taskData)
-                        }).then(res => res.json())
-                    );
+                    createdTasks.push({ tempId: node.id, ...taskBody });
                 }
             }
-        });
-
-        prevNodes.forEach(prevNode => {
-            if (!currentNodes.some(currentNode => currentNode.id === prevNode.id)) {
-                promises.push(deleteTask(prevNode.id));
-            }
-        });
-
-        currentEdges.forEach(edge => {
-            if (edge.draft) {
-                const existingEdge = previousEdgesMap.get(edge.id);
-                if (!existingEdge) {
-                    promises.push(
-                        fetch('/api/dependencies', {
-                            method: 'POST',
-                            credentials: 'include',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                from_task: parseInt(edge.source, 10),
-                                to_task: parseInt(edge.target, 10),
-                                project_id: projectId
-                            })
-                        }).then(res => res.json())
-                    );
-                }
-            }
-        });
-
-        prevEdges.forEach(prevEdge => {
-            if (!currentEdges.some(currentEdge => currentEdge.id === prevEdge.id)) {
-                promises.push(deleteDependency(prevEdge.id));
-            }
-        });
-
-        try {
-            setEdges(currentEdges.map(e => e.draft ? { ...e, draft: false } : e));
-            setNodes(currentNodes.map(n => {
-                if (n.draft) {
-                    return {
-                        ...n,
-                        draft: false,
-                        style: createNodeStyle(n.data.color, n.data.completed, n.selected, false)
-                    };
-                }
-                return n;
-            }));
-
-            await Promise.all(promises);
-
-            setPrevNodes([]);
-            setPrevEdges([]);
-
-        } catch (error) {
-            setNodes(prevNodes);
-            setEdges(prevEdges);
         }
 
-    }, [prevNodes, prevEdges, createNodeStyle, currentProjectRef, nodesRef, edgesRef]);
+        // Deletions: anything in prevNodes that doesn't survive
+        for (let prev of prevNodes) {
+            if (!currentNodes.some((n) => n.id === prev.id)) {
+                deletedTaskIds.push(parseInt(prev.id, 10));
+            }
+        }
+
+        // 2) Classify edges
+        for (let edge of currentEdges) {
+            if (edge.draft) {
+                const depBody = {
+                    from_task: parseInt(edge.source, 10),
+                    to_task: parseInt(edge.target, 10),
+                    project_id: projectId,
+                };
+
+                if (prevEdgesMap.has(edge.id)) {
+                    updatedDeps.push({ id: parseInt(edge.id, 10), ...depBody });
+                } else {
+                    createdDeps.push(depBody);
+                }
+            }
+        }
+
+        for (let prev of prevEdges) {
+            if (!currentEdges.some((e) => e.id === prev.id)) {
+                deletedDepIds.push(parseInt(prev.id, 10));
+            }
+        }
+
+        // 3) Send one bulk request
+        const payload = {
+            project_id: projectId,
+            tasks: {
+                created: createdTasks,
+                updated: updatedTasks,
+                deleted: deletedTaskIds,
+            },
+            dependencies: {
+                created: createdDeps,
+                updated: updatedDeps,
+                deleted: deletedDepIds,
+            },
+        };
+
+        try {
+            // Optimistically clear the drafts in UI
+            setNodes((nodes) =>
+                nodes.map((n) =>
+                    n.draft
+                        ? {
+                            ...n,
+                            draft: false,
+                            style: createNodeStyle(n.data.color, n.data.completed, n.selected, false),
+                        }
+                        : n
+                )
+            );
+            setEdges((edges) =>
+                edges.map((e) => (e.draft ? { ...e, draft: false } : e))
+            );
+
+            const res = await fetch('/api/bulk-change', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const result = await res.json();
+            // result should contain something like:
+            // { tasksCreated: [ { tempId: "-3", newId: 42 }, … ], … }
+
+            // 4) Replace temp IDs with real IDs
+            const idMap = new Map();
+            (result.tasksCreated || []).forEach(({ tempId, newId }) => {
+                idMap.set(String(tempId), String(newId));
+            });
+
+            // Patch nodes
+            let patchedNodes = nodesRef.current.map((n) => {
+                const mapped = idMap.get(n.id);
+                return mapped
+                    ? { ...n, id: mapped }
+                    : n;
+            });
+
+            // Patch edges
+            let patchedEdges = edgesRef.current.map((e) => {
+                let src = idMap.get(e.source) || e.source;
+                let tgt = idMap.get(e.target) || e.target;
+                return { ...e, source: src, target: tgt };
+            });
+
+            // Commit the patched graph
+            setNodes(patchedNodes);
+            setEdges(patchedEdges);
+
+            // Reset history
+            setPrevNodes([]);
+            setPrevEdges([]);
+        } catch (err) {
+            // Roll back on error
+            setNodes(prevNodes);
+            setEdges(prevEdges);
+            console.error('Bulk change failed', err);
+        }
+    }, [
+        prevNodes,
+        prevEdges,
+        createNodeStyle,
+        currentProjectRef,
+        nodesRef,
+        edgesRef
+    ]);
 
     const handleRejectChanges = useCallback(() => {
         setNodes(prevNodes);

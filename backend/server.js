@@ -476,6 +476,115 @@ app.post('/api/log-error', express.json(), (req, res) => {
   res.sendStatus(204);
 });
 
+// --- BULK CHANGE ENDPOINT (Authenticated) ---
+app.post('/api/bulk-change', isAuthenticated, (req, res) => {
+  const { project_id, tasks, dependencies } = req.body;
+  const userId = req.session.user.id;
+
+  // Prepare arrays to collect the newly assigned IDs
+  const tasksCreated = [];
+  const depsCreated = [];
+
+  db.serialize(() => {
+    // Start a transaction
+    db.run("BEGIN TRANSACTION");
+
+    // 1) Tasks → created / updated / deleted
+    tasks.created.forEach((t) => {
+      const { tempId, title, posX, posY, completed, color } = t;
+      db.run(
+        `INSERT INTO tasks 
+           (title, posX, posY, completed, color, project_id, user_id) 
+         VALUES (?,?,?,?,?,?,?)`,
+        [title, posX, posY, completed, color, project_id, userId],
+        function (err) {
+          if (err) {
+            console.error("bulk-change task insert:", err);
+            return;
+          }
+          tasksCreated.push({ tempId: String(tempId), newId: this.lastID });
+        }
+      );
+    });
+
+    tasks.updated.forEach((t) => {
+      const { id, title, posX, posY, completed, color } = t;
+      db.run(
+        `UPDATE tasks 
+            SET title=?, posX=?, posY=?, completed=?, color=?, project_id=? 
+          WHERE id=? AND user_id=?`,
+        [title, posX, posY, completed, color, project_id, id, userId]
+      );
+    });
+
+    tasks.deleted.forEach((id) => {
+      // Remove any dangling dependencies first
+      db.run(
+        `DELETE FROM dependencies 
+           WHERE (from_task = ? OR to_task = ?) 
+             AND user_id = ?`,
+        [id, id, userId]
+      );
+      db.run(
+        `DELETE FROM tasks 
+           WHERE id = ? AND user_id = ?`,
+        [id, userId]
+      );
+    });
+
+    // 2) Dependencies → created / updated / deleted
+    dependencies.created.forEach((d) => {
+      const { from_task, to_task } = d;
+      db.run(
+        `INSERT INTO dependencies 
+           (from_task, to_task, project_id, user_id)
+         VALUES (?,?,?,?)`,
+        [from_task, to_task, project_id, userId],
+        function (err) {
+          if (err) {
+            console.error("bulk-change dep insert:", err);
+            return;
+          }
+          depsCreated.push({ from_task, to_task, newId: this.lastID });
+        }
+      );
+    });
+
+    dependencies.updated.forEach((d) => {
+      const { id, from_task, to_task } = d;
+      db.run(
+        `UPDATE dependencies 
+            SET from_task=?, to_task=?, project_id=?
+          WHERE id=? AND user_id=?`,
+        [from_task, to_task, project_id, id, userId]
+      );
+    });
+
+    dependencies.deleted.forEach((id) => {
+      db.run(
+        `DELETE FROM dependencies 
+           WHERE id=? AND user_id=?`,
+        [id, userId]
+      );
+    });
+
+    // Commit (or rollback on error)
+    db.run("COMMIT", (err) => {
+      if (err) {
+        console.error("bulk-change commit failed:", err);
+        db.run("ROLLBACK");
+        return res.status(500).json({ error: err.message });
+      }
+      // Return mapping of temp→real IDs
+      res.json({
+        tasksCreated,
+        dependenciesCreated: depsCreated
+      });
+    });
+  });
+});
+
+
 // --- Start the server ---
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);

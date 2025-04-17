@@ -12,8 +12,8 @@ require('dotenv').config();
 
 // const openai = new OpenAI();
 const openai = new OpenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+  apiKey: process.env.OPENAI_API_KEY,
+  // baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
 });
 
 const app = express();
@@ -422,9 +422,9 @@ Please generate an updated project plan based on this user input: '${userInput}'
 
   try {
     const completion = await openai.chat.completions.create({
-      model: "gemini-2.0-flash", // Change model if desired.
+      model: "o4-mini", // Change model if desired.
       messages: messages,
-      temperature: 0.7,
+      // temperature: 0.7,
     });
 
     const responseText = completion.choices[0].message.content.replace("```json", "").replace("```", "").trim();

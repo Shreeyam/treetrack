@@ -33,7 +33,7 @@ app.use(session({
   secret: crypto.randomBytes(64).toString('hex'),
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, secure: process.env.NODE_ENV === 'production', domain: process.env.NODE_ENV === 'production' ? 'treetrack.shreey.am' : undefined } // 7 days persistence
+  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, secure: process.env.NODE_ENV === 'production', domain: process.env.NODE_ENV === 'production' ? 'treetrack.xyz' : undefined } // 7 days persistence
 }));
 
 // Connect to our main SQLite DB.

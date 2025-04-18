@@ -48,7 +48,8 @@ export default function TreetrackLanding() {
                     {/* Left Column – Text & Buttons */}
                     <div className="w-full md:w-2/3 flex flex-col items-center text-center md:items-start md:text-left space-y-4">
                         <h1 className="text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl lg:text-6xl">
-                            Organize your thoughts, <br className="hidden sm:inline" />
+                            Organize your thoughts, 
+                            <br />
                             <span className="text-primary">
                                 <ReactTyped
                                     strings={[

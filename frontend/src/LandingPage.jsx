@@ -22,16 +22,30 @@ import { Footer } from '@/components/navigation/Footer';
 import { Navbar } from '@/components/navigation/Navbar';
 
 import '@/globals.css'
+import bgVideoMp4 from '@/assets/background_optimized.mp4';
+
 export default function TreetrackLanding() {
     return (
-        <div className="flex flex-col min-h-screen bg-background">
+        <div className="flex flex-col min-h-screen">
             {/* Navigation */}
             <Navbar />
             {/* Hero Section */}
-            <section className="w-full py-12 md:py-24 lg:py-32">
-                <div className="container mx-auto px-4 md:px-6 flex flex-col md:flex-row items-center md:justify-between">
+            <section className="relative overflow-hidden w-full py-12 md:py-24 lg:py-32">
+                {/* Background video fills the section */}
+                <video
+                    className="absolute inset-0 w-full h-full object-cover -z-10"
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                >
+                    <source src={bgVideoMp4} type="video/mp4" />
+                    Your browser doesn’t support HTML5 video.
+                </video>
 
-                    {/* Left Column - Text and Buttons */}
+                {/* Hero content sits above the video */}
+                <div className="relative z-10 container mx-auto px-4 md:px-6 flex flex-col md:flex-row items-center md:justify-between">
+                    {/* Left Column – Text & Buttons */}
                     <div className="w-full md:w-2/3 flex flex-col items-center text-center md:items-start md:text-left space-y-4">
                         <h1 className="text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl lg:text-6xl">
                             Organize your thoughts, <br className="hidden sm:inline" />
@@ -65,20 +79,21 @@ export default function TreetrackLanding() {
                         </div>
                     </div>
 
-                    {/* Right Column - Video Demo */}
-                    <div className="w-full md:w-1/3 mt-8 md:mt-0 flex justify-center">
-                        {/* Adjust the video attributes as needed: "muted" for autoplay to work in most browsers */}
-                        <video
-                            className="w-full max-w-lg"
-                            src="path_to_your_video.mp4"
-                            autoPlay
-                            muted
-                            loop
-                            playsInline
-                        >
-                            Your browser does not support the video tag.
-                        </video>
-                    </div>
+                    {/* (Optional) remove or repurpose this block if you still need a demo video */}
+                    {/* 
+    <div className="w-full md:w-1/3 mt-8 md:mt-0 flex justify-center">
+      <video
+        className="w-full max-w-lg"
+        src={bgVideoMp4}
+        autoPlay
+        muted
+        loop
+        playsInline
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
+    */}
                 </div>
             </section>
 

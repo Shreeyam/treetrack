@@ -9,7 +9,7 @@ import { LoaderCircle, Send, X, User, Bot } from "lucide-react"; // Added Send, 
 
 const ChatBot = ({ isOpen, onClose, currentProject, nodes, dependencies, handleGenerativeEdit, handleAcceptNodeChanges, handleRejectNodeChanges }) => { // Added onClose prop
     const [messages, setMessages] = useState([
-        { text: "Hi! How can I help you modify the project plan?", sender: "bot" } // Initial bot message
+        { text: "Hi! How can I help with your project?", sender: "bot" } // Initial bot message
     ]);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
@@ -160,7 +160,7 @@ const ChatBot = ({ isOpen, onClose, currentProject, nodes, dependencies, handleG
                                             : msg.sender === "bot"
                                                 ? "bg-gray-100 text-gray-900"
                                                 : msg.sender === "system"
-                                                    ? "bg-accent/10 text-accent text-xs italic text-center w-full" // System message style
+                                                    ? "bg-blue-100 text-blue-400 text-xs italic text-center w-full" // System message style
                                                     : "bg-destructive/10 text-destructive w-full" // Error message style
                                     }`}
                                 >

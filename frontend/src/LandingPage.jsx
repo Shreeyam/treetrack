@@ -78,22 +78,6 @@ export default function TreetrackLanding() {
                             </Button> */}
                         </div>
                     </div>
-
-                    {/* (Optional) remove or repurpose this block if you still need a demo video */}
-                    {/* 
-    <div className="w-full md:w-1/3 mt-8 md:mt-0 flex justify-center">
-      <video
-        className="w-full max-w-lg"
-        src={bgVideoMp4}
-        autoPlay
-        muted
-        loop
-        playsInline
-      >
-        Your browser does not support the video tag.
-      </video>
-    </div>
-    */}
                 </div>
             </section>
 
@@ -104,7 +88,7 @@ export default function TreetrackLanding() {
                     <div className="grid gap-6 lg:grid-cols-3 lg:gap-12 items-start">
                         <div className="flex flex-col gap-2">
                             <Network className="h-10 w-10 text-primary" />
-                            <h3 className="text-xl font-bold">Knowledge Graph</h3>
+                            <h3 className="text-xl font-bold">Graph-Based Visualization</h3>
                             <p className="text-muted-foreground">
                                 Visualize dependencies between your tasks, notes, and projects with our intuitive graph interface.
                             </p>
@@ -113,14 +97,14 @@ export default function TreetrackLanding() {
                             <Clock className="h-10 w-10 text-primary" />
                             <h3 className="text-xl font-bold">Time Management</h3>
                             <p className="text-muted-foreground">
-                                Track time spent on tasks and projects with integrated Pomodoro timers and custom time blocks.
+                                Track dock dates, identify critical paths, and manage your time effectively with our built-in calendar and timeline features.
                             </p>
                         </div>
                         <div className="flex flex-col gap-2">
                             <Sparkle className="h-10 w-10 text-primary" />
                             <h3 className="text-xl font-bold">AI Enabled</h3>
                             <p className="text-muted-foreground">
-                                Use generative AI to make edits, provide overviews, and [...]
+                                Use generative AI to make edits, provide overviews, and give suggestions on your tasks and projects.
                             </p>
                         </div>
                     </div>

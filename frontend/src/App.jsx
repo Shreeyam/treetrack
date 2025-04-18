@@ -12,7 +12,7 @@ import { nodeStyles } from '@/components/flow/styles';
 import { fetchUser, fetchProjects, createProject, deleteProject, fetchTasksAndEdges, updateTask, deleteTask, deleteDependency } from './api';
 import ChatBot from './components/misc/chatbot';
 import { createAddNewNode, mapWithChangeDetection } from './utils/nodeFunctions';
-
+import { useNavigate } from 'react-router';
 
 // Memoize imported components
 const MemoAuthForm = React.memo(AuthForm);
@@ -56,6 +56,8 @@ function App({user, setUser}) {
     const edgesRef = useRef(edges);
     const currentProjectRef = useRef(currentProject);
 
+    const navigate = useNavigate(); // Use useNavigate from react-router
+
     // Memos
     const memoBlendColors = useCallback((c1, c2, ratio) => blendColors(c1, c2, ratio), []);
     useEffect(() => {
@@ -93,6 +95,8 @@ function App({user, setUser}) {
                     }
                 })
                 .catch(err => console.error(err));
+        } else {
+            navigate('/login');
         }
     }, [user]);
 
@@ -548,8 +552,6 @@ function App({user, setUser}) {
         const currentNodes = nodesRef.current;
         const currentEdges = edgesRef.current;
         const projectId = parseInt(currentProjectRef.current, 10);
-        console.log(projectId);
-        console.log(currentProjectRef.current);
         // Build maps of the previous state for quick lookups
         const prevNodesMap = new Map(prevNodes.map((n) => [n.id, n]));
         const prevEdgesMap = new Map(prevEdges.map((e) => [e.id, e]));
@@ -760,6 +762,11 @@ function App({user, setUser}) {
         });
     }, []);
 
+    const handleCloseChatbot = useCallback(() => {
+        setGenerativeMode(false);
+    }
+    , []);
+
     // --- Memoized Computation of Visible and Rendered Nodes/Edges ---
     const nextTaskIds = useMemo(() => {
         const ids = new Set();
@@ -881,7 +888,7 @@ function App({user, setUser}) {
                 generativeMode={generativeMode}
                 setGenerativeMode={setGenerativeMode}
             />
-            <ChatBot isOpen={generativeMode} nodes={nodes} dependencies={edges} currentProject={currentProject} handleGenerativeEdit={handleGenerativeEdit} handleAcceptNodeChanges={handleAcceptChanges} handleRejectNodeChanges={handleRejectChanges} />
+            <ChatBot isOpen={generativeMode} nodes={nodes} dependencies={edges} currentProject={currentProject} handleGenerativeEdit={handleGenerativeEdit} handleAcceptNodeChanges={handleAcceptChanges} handleRejectNodeChanges={handleRejectChanges} onClose={handleCloseChatbot} />
             <ReactFlowProvider>
                 <MemoFlowArea
                     nodes={renderedNodes}

@@ -72,7 +72,7 @@ const AuthForm = ({ onLogin, isRegister, setIsRegister }) => {
                 <CardContent className="space-y-4">
                     {isRegister ? (
                         <>
-                            <Input
+                            {/* <Input
                                 placeholder="First Name"
                                 value={firstName}
                                 onChange={(e) => setFirstName(e.target.value)}
@@ -87,7 +87,7 @@ const AuthForm = ({ onLogin, isRegister, setIsRegister }) => {
                                 type="email"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                            />
+                            /> */}
                             <Input
                                 placeholder="Username"
                                 value={registerUsername}

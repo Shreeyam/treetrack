@@ -104,7 +104,7 @@ export default function TreetrackLanding() {
                             <Sparkle className="h-10 w-10 text-primary" />
                             <h3 className="text-xl font-bold">AI Enabled</h3>
                             <p className="text-muted-foreground">
-                                Use generative AI to make edits, provide overviews, and give suggestions on your tasks and projects.
+                                Use generative AI to make edits, provide overviews, and give suggestions on your tasks and projects. Powered by Google Gemini models.
                             </p>
                         </div>
                     </div>

@@ -121,7 +121,7 @@ function isPremium(req, res, next) {
 // Rate limiter for the login endpoint.
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5,
+  max: 55,
   message: "Too many login attempts. Please try again later."
 });
 

@@ -163,8 +163,8 @@ app.post('/api/login', loginLimiter, (req, res) => {
     try {
       const match = await bcrypt.compare(password, user.password);
       if (match) {
-        req.session.user = { id: user.id, username: user.username, premium: true };
-        res.json({ id: user.id, username: user.username, premium: true });
+        req.session.user = { id: user.id, username: user.username, premium: user.premium };
+        res.json({ id: user.id, username: user.username, premium: user.premium });
       } else {
         res.status(400).json({ error: "Invalid credentials" });
       }

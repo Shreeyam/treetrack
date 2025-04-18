@@ -25,10 +25,7 @@ const VIEWPORT_START_OFFSET = { x: 50, y: 50 }; // Offset from viewport top-left
 const NODE_WIDTH = 150; // Approximate node width for bounds checking
 const NODE_HEIGHT = 50; // Approximate node height for bounds checking
 
-function App() {
-    // --- Authentication States ---
-    const [user, setUser] = useState(null);
-
+function App({user, setUser}) {
     // --- Main App States ---
     const [projects, setProjects] = useState([]);
     const [currentProject, setCurrentProject] = useState(() => localStorage.getItem('currentProject') || '');
@@ -461,7 +458,7 @@ function App() {
             const existingNode = prevNodeMap.get(origId);
             const isDraft = true; // Mark all AI suggestions as draft initially
             // Preserve the original position if the node exists; otherwise, use the incoming position.
-            const position = existingNode ? existingNode.position : { x: task.posX, y: task.posY };
+            const position = { x: task.posX, y: task.posY };
             const color = (task.color && task.color.trim() !== "")
                 ? task.color
                 : (existingNode ? existingNode.data.color : '#ffffff');
@@ -470,7 +467,7 @@ function App() {
             return {
                 id: assignedId,
                 data: { label: task.title, completed, color },
-                position, // Use determined position
+                position: position,
                 style: createNodeStyle(color, completed, false, isDraft),
                 sourcePosition: 'right',
                 targetPosition: 'left',
@@ -531,7 +528,6 @@ function App() {
         setEdges((prevEdges) => {
             const edgeMap = new Map(prevEdges.map((e) => [e.id, e]));
             updatedEdges.forEach((edge) => {
-                console.log(edge.delete);
                 if (edge.delete) edgeMap.delete(edge.id);
                 else edgeMap.set(edge.id, edge);
             });

@@ -1,29 +1,41 @@
 // src/components/ChatBot.jsx
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 // Adjust these imports if your project structure is different.
 // If you don't have a Card component, you can simply use <div> elements with the provided Tailwind classes.
-import { Card, CardHeader, CardContent, CardFooter } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card"; // Added CardTitle
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { LoaderCircle } from "lucide-react"; // Assuming you have a loader component
+import { LoaderCircle, Send, X, User, Bot } from "lucide-react"; // Added Send, X, User, Bot icons
 
-const ChatBot = ({ isOpen, currentProject, nodes, dependencies, handleGenerativeEdit, handleAcceptNodeChanges, handleRejectNodeChanges }) => {
-    const [messages, setMessages] = useState([]);
+const ChatBot = ({ isOpen, onClose, currentProject, nodes, dependencies, handleGenerativeEdit, handleAcceptNodeChanges, handleRejectNodeChanges }) => { // Added onClose prop
+    const [messages, setMessages] = useState([
+        { text: "Hi! How can I help you modify the project plan?", sender: "bot" } // Initial bot message
+    ]);
     const [input, setInput] = useState("");
-    const [isLoading, setIsLoading] = useState(false); // Add loading state
-    const [pendingChanges, setPendingChanges] = useState(null); // State to hold pending changes
+    const [isLoading, setIsLoading] = useState(false);
+    const [pendingChanges, setPendingChanges] = useState(null);
+    const messagesEndRef = useRef(null); // Ref for scrolling
+
+    // Function to scroll to the bottom of the messages
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    // Scroll to bottom whenever messages change
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages]);
 
     // Function to handle sending a message
     const handleSendMessage = (event) => {
         event.preventDefault();
-        if (!input.trim() || isLoading || pendingChanges) return; // Prevent sending if loading or changes pending
+        if (!input.trim() || isLoading || pendingChanges) return;
 
-        // Add the user's message to the chat
         const userMessage = { text: input, sender: "user" };
         setMessages((prevMessages) => [...prevMessages, userMessage]);
         setInput("");
-        setIsLoading(true); // Set loading to true
-        setPendingChanges(null); // Clear any previous pending changes
+        setIsLoading(true);
+        setPendingChanges(null);
 
         const nodeData = nodes.map((node) => ({
             id: node.id,
@@ -49,32 +61,40 @@ const ChatBot = ({ isOpen, currentProject, nodes, dependencies, handleGenerative
             credentials: "include",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                user_input: userMessage.text, // Use the captured user message text
+                user_input: userMessage.text,
                 project_id: currentProject,
                 current_state: { tasks: nodeData, dependencies: dependencyData },
             }),
         })
-            .then((response) => response.json())
+            .then((response) => {
+                if (!response.ok) {
+                    // Handle HTTP errors
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then((json) => {
-                // Add bot summary message
-                setMessages((prevMessages) => [
-                    ...prevMessages,
-                    { text: json.data.summary, sender: "bot" },
-                ]);
-                // Store the proposed changes
-                setPendingChanges(json.data);
-                handleGenerativeEdit(json.data);
+                if (json.data && json.data.summary) {
+                    setMessages((prevMessages) => [
+                        ...prevMessages,
+                        { text: json.data.summary, sender: "bot" },
+                    ]);
+                    setPendingChanges(json.data);
+                    handleGenerativeEdit(json.data);
+                } else {
+                    // Handle cases where the expected data is missing
+                    throw new Error("Invalid response format from server.");
+                }
             })
             .catch((error) => {
                 console.error("Error:", error);
-                // Optionally add an error message to the chat
                 setMessages((prevMessages) => [
                     ...prevMessages,
-                    { text: "Sorry, something went wrong.", sender: "bot" },
+                    { text: `Sorry, something went wrong: ${error.message}`, sender: "error" }, // Use 'error' sender type
                 ]);
             })
             .finally(() => {
-                setIsLoading(false); // Set loading to false regardless of success or error
+                setIsLoading(false);
             });
     };
 
@@ -83,9 +103,9 @@ const ChatBot = ({ isOpen, currentProject, nodes, dependencies, handleGenerative
         if (!pendingChanges) return;
         setMessages((prevMessages) => [
             ...prevMessages,
-            { text: "Changes applied.", sender: "system" }, // Optional system message
+            { text: "Changes applied.", sender: "system" },
         ]);
-        setPendingChanges(null); // Clear pending changes
+        setPendingChanges(null);
         handleAcceptNodeChanges();
     };
 
@@ -93,44 +113,72 @@ const ChatBot = ({ isOpen, currentProject, nodes, dependencies, handleGenerative
     const handleRejectChanges = () => {
         setMessages((prevMessages) => [
             ...prevMessages,
-            { text: "Changes discarded.", sender: "system" }, // Optional system message
+            { text: "Changes discarded.", sender: "system" },
         ]);
-        setPendingChanges(null); // Clear pending changes
+        setPendingChanges(null);
         handleRejectNodeChanges();
     };
 
     return (
         (isOpen) && (
-            // Fixed positioning to ensure the chatbot card remains in view at the bottom-right of the page
-            < div className="fixed bottom-4 right-4 z-50" >
-                <Card className="w-96 shadow-lg p-4">
-                    <CardContent className="bg-white h-80 px-0 overflow-y-auto">
-                        {messages.length === 0 ? (
-                            <p className="text-gray-500 text-sm">Start chatting...</p>
-                        ) : (
-                            messages.map((msg, index) => (
+            <div className="fixed bottom-4 right-4 z-50">
+                {/* Increased width, added flex column layout */}
+                <Card className="w-[400px] shadow-lg flex flex-col max-h-[60vh] py-0">
+                    {/* Added CardHeader with title and close button */}
+                    <CardHeader className="flex flex-row items-center justify-between p-3 [.border-b]:pb-3 border-b">
+                        <CardTitle className="text-base font-semibold">Project Assistant</CardTitle>
+                        <Button variant="link" size="icon" onClick={onClose} className="h-6 w-6">
+                            <X className="h-4 w-4" />
+                        </Button>
+                    </CardHeader>
+                    {/* Adjusted padding, height, added flex-grow and space-y-2 */}
+                    <CardContent className="flex-grow bg-white p-3 overflow-y-auto space-y-2 !gap-0"> {/* Added space-y-2 */}
+                        {messages.map((msg, index) => (
+                            <div
+                                key={index}
+                                // Adjusted conditional classes for full width on system/error
+                                className={`flex items-start gap-2 text-sm ${
+                                    msg.sender === "user" ? "ml-auto flex-row-reverse max-w-[85%]" :
+                                    msg.sender === "bot" ? "mr-auto max-w-[85%]" :
+                                    "w-full" // System and error messages take full width
+                                }`}
+                            >
+                                {/* Icon based on sender */}
+                                <span className={`flex-shrink-0 p-1.5 rounded-full ${
+                                    msg.sender === 'user' ? 'bg-primary/10 text-primary' :
+                                    msg.sender === 'bot' ? 'bg-gray-200 text-gray-700' :
+                                    'hidden' // Hide icon for system/error
+                                }`}>
+                                    {msg.sender === 'user' ? <User size={16} /> : msg.sender === 'bot' ? <Bot size={16} /> : null}
+                                </span>
+                                {/* Message bubble styling */}
                                 <div
-                                    key={index}
-                                    className={`my-1 rounded text-sm p-2 transition-all duration-300 ease-in-out ${msg.sender === "user"
-                                        ? "bg-primary/10 text-right ml-auto max-w-[80%]"
-                                        : msg.sender === "bot"
-                                            ? "bg-gray-100 text-left mr-auto max-w-[80%]"
-                                            : "bg-white-100 text-center mx-auto max-w-[90%] text-xs italic" // System message style
-                                        }`}
+                                    // Added w-full for system/error messages to ensure inner div spans
+                                    className={`rounded-lg px-3 py-2 ${
+                                        msg.sender === "user"
+                                            ? "bg-primary/10"
+                                            : msg.sender === "bot"
+                                                ? "bg-gray-100 text-gray-900"
+                                                : msg.sender === "system"
+                                                    ? "bg-accent/10 text-accent text-xs italic text-center w-full" // System message style
+                                                    : "bg-destructive/10 text-destructive w-full" // Error message style
+                                    }`}
                                 >
                                     {msg.text}
                                 </div>
-                            ))
-                        )}
-                        {/* Show loading indicator */}
+                            </div>
+                        ))}
+                        {/* Loading indicator */}
                         {isLoading && (
-                            <div className="my-1 rounded text-sm p-2 bg-gray-100 text-left mr-auto max-w-[80%] italic text-gray-500 flex items-center transition-opacity duration-300 ease-in-out"> {/* Added flex, items-center and transition */}
-                                <LoaderCircle className="animate-spin mr-2 h-4 w-4" /> Generating... {/* Added margin, size */}
+                            <div className="flex items-center justify-center p-2 text-gray-500">
+                                <LoaderCircle className="animate-spin mr-2 h-4 w-4" /> Thinking...
                             </div>
                         )}
-                        {/* Show Accept/Reject buttons if there are pending changes */}
+                        {/* Accept/Reject buttons */}
                         {pendingChanges && !isLoading && (
-                            <div className="mt-2 flex justify-end space-x-2">
+                            // Added w-full to the container div for buttons
+                            <div className="mt-2 p-2 bg-warning/10 border border-warning/20 rounded-md flex justify-end space-x-2 w-full">
+                                <span className="text-sm text-warning mr-auto self-center">Apply proposed changes?</span>
                                 <Button variant="destructive" size="sm" onClick={handleRejectChanges}>
                                     Reject
                                 </Button>
@@ -139,27 +187,34 @@ const ChatBot = ({ isOpen, currentProject, nodes, dependencies, handleGenerative
                                 </Button>
                             </div>
                         )}
+                        {/* Element to scroll to */}
+                        <div ref={messagesEndRef} />
                     </CardContent>
-                    <CardFooter className="px-0 pt-4"> {/* Added pt-4 for spacing */}
-                        <Input
-                            type="text"
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            placeholder="Type a message..."
-                            className="flex-1 w-full mr-2"
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter" && !isLoading && !pendingChanges) { // Prevent Enter if loading or changes pending
-                                    handleSendMessage(e);
-                                }
-                            }}
-                            disabled={isLoading || !!pendingChanges} // Disable input while loading or changes pending
-                        />
-                        <Button type="primary" onClick={handleSendMessage} disabled={isLoading || !!pendingChanges}> {/* Disable button while loading or changes pending */}
-                            Send
-                        </Button>
+                    {/* Adjusted padding and added border-t */}
+                    <CardFooter className="p-3 border-t [.border-t]:pt-3">
+                        <form onSubmit={handleSendMessage} className="flex w-full items-center space-x-2">
+                            <Input
+                                type="text"
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                placeholder="Type your request..."
+                                className="flex-1"
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !e.shiftKey && !isLoading && !pendingChanges) { // Prevent Enter if loading or changes pending, allow shift+enter for newline
+                                        e.preventDefault(); // Prevent default newline on Enter
+                                        handleSendMessage(e);
+                                    }
+                                }}
+                                disabled={isLoading || !!pendingChanges}
+                            />
+                            {/* Replaced text button with icon button */}
+                            <Button type="submit" size="icon" disabled={isLoading || !!pendingChanges || !input.trim()}>
+                                <Send className="h-4 w-4" />
+                            </Button>
+                        </form>
                     </CardFooter>
                 </Card>
-            </div >
+            </div>
         )
     );
 };

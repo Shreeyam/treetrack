@@ -22,6 +22,7 @@
     --color-muted-foreground: var(--muted-foreground);
     --color-accent: var(--accent);
     --color-accent-foreground: var(--accent-foreground);
+    --color-warning: var(--warning);
     --color-destructive: var(--destructive);
     --color-border: var(--border);
     --color-input: var(--input);
@@ -59,6 +60,8 @@
     --muted-foreground: oklch(0.556 0 0);
     --accent: oklch(0.97 0 0);
     --accent-foreground: oklch(0.205 0 0);
+    --warning: #FFBA49;
+    /* --accent: #208aae; */
     --destructive: #F34213;
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
@@ -82,7 +85,7 @@
     --animation-ease: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* #208aae -- accent */
+/*  -- accent */
 
 /* .dark {
   --background: oklch(0.145 0 0);

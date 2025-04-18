@@ -17,5 +17,5 @@ jobs:
         username: ${{ secrets.DROPLET_USER }}
         key: ${{ secrets.DROPLET_SSH_KEY }}
         script: |
-          cd /home/treetrackrunner/treetrack
+          cd /home/treetrackrunner
           ./deploy-preprod.sh

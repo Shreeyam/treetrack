@@ -33,7 +33,7 @@ app.use(session({
   secret: crypto.randomBytes(64).toString('hex'),
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, secure: process.env.NODE_ENV === 'production', domain: process.env.NODE_ENV === 'production' ? 'treetrack.shreey.am' : undefined } // 7 days persistence
+  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, secure: process.env.NODE_ENV === 'production', domain: process.env.NODE_ENV === 'production' ? 'treetrack.xyz' : undefined } // 7 days persistence
 }));
 
 // Connect to our main SQLite DB.
@@ -87,7 +87,7 @@ db.serialize(() => {
 
   // Create the dependencies table.
   db.run(`
-    CREATE TABLE IF NOT EXISTS dependencies (
+    CREATE TABLE IF NOT EXISTS dependencies_new (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       from_task INTEGER,
       to_task INTEGER,
@@ -111,7 +111,6 @@ function isAuthenticated(req, res, next) {
 
 // Middleware to check if the user is a premium user.
 function isPremium(req, res, next) {
-  return next();
   if (req.session && req.session.user && req.session.user.premium) {
     return next();
   }
@@ -164,8 +163,8 @@ app.post('/api/login', loginLimiter, (req, res) => {
     try {
       const match = await bcrypt.compare(password, user.password);
       if (match) {
-        req.session.user = { id: user.id, username: user.username, premium: true };
-        res.json({ id: user.id, username: user.username, premium: true });
+        req.session.user = { id: user.id, username: user.username, premium: user.premium };
+        res.json({ id: user.id, username: user.username, premium: user.premium });
       } else {
         res.status(400).json({ error: "Invalid credentials" });
       }

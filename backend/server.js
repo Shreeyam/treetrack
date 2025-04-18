@@ -87,7 +87,7 @@ db.serialize(() => {
 
   // Create the dependencies table.
   db.run(`
-    CREATE TABLE IF NOT EXISTS dependencies_new (
+    CREATE TABLE IF NOT EXISTS dependencies (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       from_task INTEGER,
       to_task INTEGER,
@@ -475,112 +475,101 @@ app.post('/api/log-error', express.json(), (req, res) => {
   res.sendStatus(204);
 });
 
+// 1) Helper to turn db.run into a Promise that resolves with lastID
+function runAsync(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) {
+      if (err) return reject(err);
+      resolve(this.lastID);
+    });
+  });
+}
+
+// 2) Your new bulk-change handler
 // --- BULK CHANGE ENDPOINT (Authenticated) ---
-app.post('/api/bulk-change', isAuthenticated, (req, res) => {
+app.post('/api/bulk-change', isAuthenticated, async (req, res) => {
   const { project_id, tasks, dependencies } = req.body;
   const userId = req.session.user.id;
-
-  // Prepare arrays to collect the newly assigned IDs
+  const idMap = {};      // tempId → realId
   const tasksCreated = [];
   const depsCreated = [];
 
-  db.serialize(() => {
-    // Start a transaction
-    db.run("BEGIN TRANSACTION");
+  try {
+    await runAsync("BEGIN TRANSACTION");
 
-    // 1) Tasks → created / updated / deleted
-    tasks.created.forEach((t) => {
-      const { tempId, title, posX, posY, completed, color } = t;
-      db.run(
-        `INSERT INTO tasks 
-           (title, posX, posY, completed, color, project_id, user_id) 
+    // 3) Insert new tasks one by one, capturing real IDs
+    for (let t of tasks.created) {
+      const realId = await runAsync(
+        `INSERT INTO tasks
+           (title,posX,posY,completed,color,project_id,user_id)
          VALUES (?,?,?,?,?,?,?)`,
-        [title, posX, posY, completed, color, project_id, userId],
-        function (err) {
-          if (err) {
-            console.error("bulk-change task insert:", err);
-            return;
-          }
-          tasksCreated.push({ tempId: String(tempId), newId: this.lastID });
-        }
+        [t.title, t.posX, t.posY, t.completed, t.color, project_id, userId]
       );
-    });
+      idMap[t.tempId] = realId;
+      tasksCreated.push({ tempId: String(t.tempId), newId: realId });
+    }
 
-    tasks.updated.forEach((t) => {
-      const { id, title, posX, posY, completed, color } = t;
-      db.run(
-        `UPDATE tasks 
-            SET title=?, posX=?, posY=?, completed=?, color=?, project_id=? 
+    // 4) Update existing tasks
+    for (let t of tasks.updated) {
+      await runAsync(
+        `UPDATE tasks
+            SET title=?,posX=?,posY=?,completed=?,color=?,project_id=?
           WHERE id=? AND user_id=?`,
-        [title, posX, posY, completed, color, project_id, id, userId]
+        [t.title, t.posX, t.posY, t.completed, t.color, project_id, t.id, userId]
       );
-    });
+    }
 
-    tasks.deleted.forEach((id) => {
-      // Remove any dangling dependencies first
-      db.run(
-        `DELETE FROM dependencies 
-           WHERE (from_task = ? OR to_task = ?) 
-             AND user_id = ?`,
+    // 5) Delete tasks (and cascade-cleanup dependencies)
+    for (let id of tasks.deleted) {
+      await runAsync(
+        `DELETE FROM dependencies
+           WHERE (from_task=? OR to_task=?) AND user_id=?`,
         [id, id, userId]
       );
-      db.run(
-        `DELETE FROM tasks 
-           WHERE id = ? AND user_id = ?`,
+      await runAsync(
+        `DELETE FROM tasks WHERE id=? AND user_id=?`,
         [id, userId]
       );
-    });
+    }
 
-    // 2) Dependencies → created / updated / deleted
-    dependencies.created.forEach((d) => {
-      const { from_task, to_task } = d;
-      db.run(
-        `INSERT INTO dependencies 
-           (from_task, to_task, project_id, user_id)
+    // 6) Now insert new dependencies — **using the real task IDs**!
+    for (let d of dependencies.created) {
+      const from = idMap[d.from_task] || d.from_task;
+      const to = idMap[d.to_task] || d.to_task;
+      const newDepId = await runAsync(
+        `INSERT INTO dependencies
+           (from_task,to_task,project_id,user_id)
          VALUES (?,?,?,?)`,
-        [from_task, to_task, project_id, userId],
-        function (err) {
-          if (err) {
-            console.error("bulk-change dep insert:", err);
-            return;
-          }
-          depsCreated.push({ from_task, to_task, newId: this.lastID });
-        }
+        [from, to, project_id, userId]
       );
-    });
+      depsCreated.push({ from_task: from, to_task: to, newId: newDepId });
+    }
 
-    dependencies.updated.forEach((d) => {
-      const { id, from_task, to_task } = d;
-      db.run(
-        `UPDATE dependencies 
-            SET from_task=?, to_task=?, project_id=?
+    // 7) Updates & deletes for dependencies
+    for (let d of dependencies.updated) {
+      await runAsync(
+        `UPDATE dependencies
+            SET from_task=?,to_task=?,project_id=?
           WHERE id=? AND user_id=?`,
-        [from_task, to_task, project_id, id, userId]
+        [d.from_task, d.to_task, project_id, d.id, userId]
       );
-    });
-
-    dependencies.deleted.forEach((id) => {
-      db.run(
-        `DELETE FROM dependencies 
-           WHERE id=? AND user_id=?`,
+    }
+    for (let id of dependencies.deleted) {
+      await runAsync(
+        `DELETE FROM dependencies WHERE id=? AND user_id=?`,
         [id, userId]
       );
-    });
+    }
 
-    // Commit (or rollback on error)
-    db.run("COMMIT", (err) => {
-      if (err) {
-        console.error("bulk-change commit failed:", err);
-        db.run("ROLLBACK");
-        return res.status(500).json({ error: err.message });
-      }
-      // Return mapping of temp→real IDs
-      res.json({
-        tasksCreated,
-        dependenciesCreated: depsCreated
-      });
-    });
-  });
+    // 8) Commit
+    await runAsync("COMMIT");
+    res.json({ tasksCreated, dependenciesCreated: depsCreated });
+
+  } catch (err) {
+    await runAsync("ROLLBACK");
+    console.error("bulk-change failed:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 

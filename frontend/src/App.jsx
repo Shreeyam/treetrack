@@ -80,7 +80,14 @@ function App({user, setUser}) {
                     setUser(data.user);
                 }
             })
-            .catch(err => console.error(err));
+            .catch(err => {
+                if(err.status === 401) {
+                    setUser(null);
+                    navigate('/login'); // Redirect to login if not authenticated
+                }
+                console.error(err);
+            }
+            );
     }, []);
 
     useEffect(() => {
@@ -95,8 +102,6 @@ function App({user, setUser}) {
                     }
                 })
                 .catch(err => console.error(err));
-        } else {
-            navigate('/login');
         }
     }, [user]);
 

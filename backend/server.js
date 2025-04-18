@@ -87,7 +87,7 @@ db.serialize(() => {
 
   // Create the dependencies table.
   db.run(`
-    CREATE TABLE IF NOT EXISTS dependencies (
+    CREATE TABLE IF NOT EXISTS dependencies_new (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       from_task INTEGER,
       to_task INTEGER,
@@ -111,7 +111,6 @@ function isAuthenticated(req, res, next) {
 
 // Middleware to check if the user is a premium user.
 function isPremium(req, res, next) {
-  return next();
   if (req.session && req.session.user && req.session.user.premium) {
     return next();
   }

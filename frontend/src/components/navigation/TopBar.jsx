@@ -94,9 +94,11 @@ const TopBar = memo(({
                         <Sparkles /> Generate
                     </Button>
                 ) : (
-                    <SparklyUpgradeButton onClick={() => window.alert("Feature coming soon!")}>
-                        <Gem className="text-purple-500" /> Upgrade
-                    </SparklyUpgradeButton>
+                    <>
+                    </>
+                    // <SparklyUpgradeButton onClick={() => window.alert("Feature coming soon!")}>
+                    //     <Gem className="text-purple-500" /> Upgrade
+                    // </SparklyUpgradeButton>
                 )
             }
 

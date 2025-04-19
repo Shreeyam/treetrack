@@ -254,7 +254,22 @@ function App({user, setUser}) {
     );
 
     const addNewNode = useCallback(
-        createAddNewNode({ newTaskTitle, currentProject, reactFlowInstance, reactFlowWrapper, lastNodePosition, cascadeCount, cascadeStartPoint, createNodeStyle, setCascadeCount, setCascadeStartPoint, setLastNodePosition, setNewTaskTitle, setNodes }),
+        (position) => createAddNewNode({ 
+            newTaskTitle, 
+            currentProject, 
+            reactFlowInstance, 
+            reactFlowWrapper, 
+            lastNodePosition, 
+            cascadeCount, 
+            cascadeStartPoint, 
+            createNodeStyle, 
+            setCascadeCount, 
+            setCascadeStartPoint, 
+            setLastNodePosition, 
+            setNewTaskTitle, 
+            setNodes,
+            position
+        })(),
         [newTaskTitle, currentProject, reactFlowInstance, reactFlowWrapper, lastNodePosition, cascadeCount, cascadeStartPoint, createNodeStyle]
     );
 
@@ -844,6 +859,7 @@ function App({user, setUser}) {
 
     const handleNodeContextMenu = useCallback((event, node) => {
         event.preventDefault();
+        event.stopPropagation();  // Prevent the event from bubbling up to the pane
         const bounds = reactFlowWrapper.current.getBoundingClientRect();
         const x = event.clientX - bounds.left;
         const y = event.clientY - bounds.top;
@@ -915,6 +931,8 @@ function App({user, setUser}) {
                     minimapOn={minimapOn}
                     backgroundOn={backgroundOn}
                     onInit={setReactFlowInstance}
+                    onAddNode={addNewNode}
+                    onAutoArrange={handleAutoArrange}
                 />
             </ReactFlowProvider>
         </div>

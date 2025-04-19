@@ -1,4 +1,5 @@
 import { addEdge } from '@xyflow/react';
+import blendColors from '@/utils/colors';
 
 // Constants for Cascading
 const CASCADE_OFFSET = 50;

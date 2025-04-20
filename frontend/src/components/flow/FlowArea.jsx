@@ -42,6 +42,10 @@ const FlowArea = memo(({
                 onNodeContextMenu={onNodeContextMenu}
                 onNodeDragStop={onNodeDragStop}
                 onSelectionChange={onSelectionChange}
+                elementsSelectable={true}
+                selectionOnDrag={true}
+                selectNodesOnDrag={true}
+                multiSelectionKeyCode="Shift"
                 onPaneClick={onPaneClick}
                 onInit={onInit}
                 fitView

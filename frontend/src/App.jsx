@@ -174,7 +174,7 @@ function App({user, setUser}) {
             ...nodeStyles,
             backgroundColor,
             color: completed ? '#888' : 'inherit',
-            border: selected ? '2px solid blue' : '1px solid #ccc',
+            outline: selected ? '2px solid blue' : '1px solid #ccc',
         };
 
         // If the node is a draft, overlay animated diagonal stripes

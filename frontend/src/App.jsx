@@ -816,12 +816,12 @@ function App({user, setUser}) {
                 unlinkHighlight &&
                 (node.id === unlinkHighlight.source || node.id === unlinkHighlight.target)
             ) {
-                nextStyle = { ...nextStyle, border: '2px solid red' };
+                nextStyle = { ...nextStyle, outline: '2px solid red' };
             } else if (selectedSource && selectedSource.id === node.id) {
                 nextStyle = {
                     ...nextStyle,
                     backgroundColor: node.data.color || '#ffffff',
-                    border: '2px solid green',
+                    outline: '2px solid green',
                 };
             } else if (highlightNext) {
                 nextStyle = nextTaskIds.has(node.id)

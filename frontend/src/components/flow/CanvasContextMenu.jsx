@@ -28,7 +28,7 @@ const CanvasContextMenu = memo(({
                 top: y+50,
                 left: x,
                 minWidth: '150px',
-                zIndex: 1000
+                zIndex: 90
             }}
             onClick={(e) => e.stopPropagation()}
         >

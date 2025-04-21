@@ -137,3 +137,4 @@ dist
 
 *.db
 python_backend/.idea/workspace.xml
+frontend/src/.specifications

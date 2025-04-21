@@ -28,7 +28,7 @@ export function createAddNewNode({
 
     return () => {
         // Only validate title when not providing a position (i.e., when using the top bar add button)
-        if (!position && !newTaskTitle.trim()) {
+        if (!position?.x && !position?.y && !newTaskTitle.trim()) {
             return;
         }
         if (!reactFlowInstance || !reactFlowWrapper.current) {

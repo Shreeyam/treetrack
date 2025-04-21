@@ -899,6 +899,7 @@ function App({user, setUser}) {
                 backgroundOn={backgroundOn}
                 setBackgroundOn={setBackgroundOn}
                 onAutoArrange={handleAutoArrange}
+                onFitView={() => reactFlowInstance?.fitView()}
                 currentProject={currentProject}
                 projects={projects}
                 onProjectChange={setCurrentProject}

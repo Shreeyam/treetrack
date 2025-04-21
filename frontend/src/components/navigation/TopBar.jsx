@@ -37,6 +37,7 @@ const TopBar = memo(({
     backgroundOn,
     setBackgroundOn,
     onAutoArrange,
+    onFitView,
     currentProject,
     projects,
     onProjectChange,
@@ -85,7 +86,10 @@ const TopBar = memo(({
                 </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button variant="outline" onClick={onAutoArrange}>
+            <Button variant="outline" onClick={() => {
+                onAutoArrange();
+                onFitView(); // Enable fit view after auto-arranging
+            }}>
                 <WandSparkles /> Auto Arrange
             </Button>
             {

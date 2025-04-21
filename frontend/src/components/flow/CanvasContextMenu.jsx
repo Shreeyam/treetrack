@@ -77,6 +77,7 @@ const CanvasContextMenu = memo(({
                     className="p-2 cursor-pointer hover:bg-gray-100 flex items-center space-x-2"
                     onClick={() => {
                         onAutoArrange();
+                        onFitView();
                         onClose();
                     }}
                 >

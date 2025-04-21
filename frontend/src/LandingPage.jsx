@@ -93,7 +93,21 @@ export default function TreetrackLanding() {
             {/* AI Feature Section */}
             <section className="w-full py-8 md:py-16 lg:py-24 bg-background">
                 <div className="container mx-auto px-4 md:px-6 grid gap-8 lg:grid-cols-2 items-center">
-                    <div className="relative overflow-hidden rounded-lg shadow-lg aspect-video">
+                    {/* Text comes first on mobile, last on desktop */}
+                    <div className="flex flex-col justify-center space-y-3 order-first lg:order-last">
+                        <h2 className="text-3xl font-bold tracking-tight sm:text-4xl md:text-5xl">
+                            Your AI co‑planner
+                            <br />
+                            <span className="text-primary">handles the busywork</span>
+                        </h2>
+                        <p className="max-w-[600px] text-muted-foreground md:text-lg">
+                            Ask in natural language, get a perfectly sequenced plan. Reschedule, regroup
+                            and refine with a single prompt—exclusive to Pro plans.
+                        </p>
+                    </div>
+
+                    {/* Video is forced below on mobile, but moves to the left on desktop */}
+                    <div className="relative overflow-hidden rounded-lg shadow-lg aspect-video order-last lg:order-first">
                         <video
                             id="treetrack-demo"
                             className="absolute inset-0 w-full h-full object-cover"
@@ -105,17 +119,6 @@ export default function TreetrackLanding() {
                             <source src={bgVideoMp4} type="video/mp4" />
                             Your browser doesn’t support HTML5 video.
                         </video>
-                    </div>
-                    <div className="flex flex-col justify-center space-y-3">
-                        <h2 className="text-3xl font-bold tracking-tight sm:text-4xl md:text-5xl">
-                            Your AI co‑planner
-                            <br />
-                            <span className="text-primary">handles the busywork</span>
-                        </h2>
-                        <p className="max-w-[600px] text-muted-foreground md:text-lg">
-                            Ask in natural language, get a perfectly sequenced plan. Reschedule, regroup
-                            and refine with a single prompt—exclusive to Pro plans.
-                        </p>
                     </div>
                 </div>
             </section>

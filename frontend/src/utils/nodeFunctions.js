@@ -28,7 +28,7 @@ export function createAddNewNode({
 
     return () => {
         // Only validate title when not providing a position (i.e., when using the top bar add button)
-        if (!position?.x && !position?.y && !newTaskTitle.trim()) {
+        if (!position && !newTaskTitle.trim()) {
             return;
         }
         if (!reactFlowInstance || !reactFlowWrapper.current) {
@@ -39,11 +39,10 @@ export function createAddNewNode({
         
         // If a specific position is provided (e.g. from context menu), use that
         if (position) {
-            const viewport = reactFlowInstance.getViewport();
-            newPosition = reactFlowInstance.screenToFlowPosition({
+            newPosition = {
                 x: position.x,
                 y: position.y
-            });
+            };
         } else {
             // Otherwise use the cascading logic for the top bar "+" button
             const viewport = reactFlowInstance.getViewport();
@@ -104,7 +103,7 @@ export function createAddNewNode({
         const tempId = `temp-${Date.now()}`;
         const optimisticNode = {
             id: tempId,
-            data: { label: taskTitle, completed: false, color: DEFAULT_COLOR },  // Use default color constant
+            data: { label: taskTitle, completed: false, color: DEFAULT_COLOR },
             position: newPosition,
             style: createNodeStyle(DEFAULT_COLOR, false),
             sourcePosition: 'right',
@@ -124,7 +123,7 @@ export function createAddNewNode({
             posY: newPosition.y,
             completed: 0,
             project_id: parseInt(currentProject, 10),
-            color: DEFAULT_COLOR  // Use default color constant
+            color: DEFAULT_COLOR
         };
 
         fetch('/api/tasks', {

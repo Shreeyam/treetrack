@@ -282,7 +282,7 @@ function App({user, setUser}) {
             setLastNodePosition, 
             setNewTaskTitle, 
             setNodes,
-            position
+            position: null // Force position to be null for TopBar add button to enable cascading
         })(),
         [newTaskTitle, currentProject, reactFlowInstance, reactFlowWrapper, lastNodePosition, cascadeCount, cascadeStartPoint, createNodeStyle]
     );

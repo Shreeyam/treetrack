@@ -89,10 +89,26 @@ const Graph = ({ tasks, dependencies }) => {
       // dep has { child, parent }
       const childPos = positions[dep.child];
       const parentPos = positions[dep.parent];
-      if (!childPos || !parentPos) return null;
-      // Compute “center” positions of cards (assuming a 150px width and about 50px height for the header)
-      const parentCenter = { x: parentPos.x + 75, y: parentPos.y + 25 };
-      const childCenter  = { x: childPos.x + 75, y: childPos.y + 25 };
+      
+      // Ensure both positions exist and have valid numerical coordinates
+      if (!childPos?.x || !childPos?.y || !parentPos?.x || !parentPos?.y) return null;
+      
+      // Compute "center" positions of cards (assuming a 150px width and about 50px height for the header)
+      const parentCenter = { 
+        x: Number(parentPos.x) + 75, 
+        y: Number(parentPos.y) + 25 
+      };
+      const childCenter = { 
+        x: Number(childPos.x) + 75, 
+        y: Number(childPos.y) + 25 
+      };
+      
+      // Additional validation to ensure we don't render with NaN values
+      if (isNaN(parentCenter.x) || isNaN(parentCenter.y) || 
+          isNaN(childCenter.x) || isNaN(childCenter.y)) {
+        return null;
+      }
+
       return (
         <line 
           key={index}

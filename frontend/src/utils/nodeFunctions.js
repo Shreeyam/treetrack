@@ -24,37 +24,29 @@ export function createAddNewNode({
     const VIEWPORT_START_OFFSET = { x: 50, y: 50 };
     const NODE_WIDTH = 150;
     const NODE_HEIGHT = 50;
-    const DEFAULT_COLOR = '#ffffff';  // Define default color constant
+    const DEFAULT_COLOR = '#ffffff';
 
     return () => {
-        // Only validate title when not providing a position (i.e., when using the top bar add button)
-        if (!position?.x && !position?.y && !newTaskTitle.trim()) {
-            return;
-        }
         if (!reactFlowInstance || !reactFlowWrapper.current) {
             return;
         }
 
         let newPosition;
+        const viewport = reactFlowInstance.getViewport();
+        const bounds = reactFlowWrapper.current.getBoundingClientRect();
+        const flowStartX = (VIEWPORT_START_OFFSET.x - viewport.x) / viewport.zoom;
+        const flowStartY = (VIEWPORT_START_OFFSET.y - viewport.y) / viewport.zoom;
+        const initialCascadePoint = { x: flowStartX, y: flowStartY };
         
         // If a specific position is provided (e.g. from context menu), use that
         if (position) {
-            const viewport = reactFlowInstance.getViewport();
-            newPosition = reactFlowInstance.screenToFlowPosition({
+            newPosition = {
                 x: position.x,
                 y: position.y
-            });
+            };
         } else {
-            // Otherwise use the cascading logic for the top bar "+" button
-            const viewport = reactFlowInstance.getViewport();
-            const bounds = reactFlowWrapper.current.getBoundingClientRect();
-
-            const flowStartX = (VIEWPORT_START_OFFSET.x - viewport.x) / viewport.zoom;
-            const flowStartY = (VIEWPORT_START_OFFSET.y - viewport.y) / viewport.zoom;
-            const initialCascadePoint = { x: flowStartX, y: flowStartY };
-
             let isLastPosVisible = false;
-            if (lastNodePosition) {
+            if (lastNodePosition && typeof lastNodePosition.x === 'number' && typeof lastNodePosition.y === 'number') {
                 const screenX = lastNodePosition.x * viewport.zoom + viewport.x;
                 const screenY = lastNodePosition.y * viewport.zoom + viewport.y;
                 if (
@@ -99,12 +91,16 @@ export function createAddNewNode({
             }
         }
 
-        // --- optimistic insertion ---
+        // Ensure position values are valid numbers
+        if (!newPosition || typeof newPosition.x !== 'number' || typeof newPosition.y !== 'number') {
+            newPosition = initialCascadePoint;
+        }
+
         const taskTitle = newTaskTitle.trim() || 'New Task';
         const tempId = `temp-${Date.now()}`;
         const optimisticNode = {
             id: tempId,
-            data: { label: taskTitle, completed: false, color: DEFAULT_COLOR },  // Use default color constant
+            data: { label: taskTitle, completed: false, color: DEFAULT_COLOR },
             position: newPosition,
             style: createNodeStyle(DEFAULT_COLOR, false),
             sourcePosition: 'right',
@@ -113,9 +109,8 @@ export function createAddNewNode({
 
         setNodes(nodes => [...nodes, optimisticNode]);
         setNewTaskTitle('');
-        if (!position) { // Only update last position for cascading
-            setLastNodePosition(newPosition);
-        }
+        setLastNodePosition(newPosition);
+
 
         // --- send to server ---
         const newTask = {
@@ -124,7 +119,7 @@ export function createAddNewNode({
             posY: newPosition.y,
             completed: 0,
             project_id: parseInt(currentProject, 10),
-            color: DEFAULT_COLOR  // Use default color constant
+            color: DEFAULT_COLOR
         };
 
         fetch('/api/tasks', {

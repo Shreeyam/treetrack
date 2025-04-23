@@ -55,10 +55,10 @@ const TopBar = memo(({
                     placeholder="New task title..."
                     value={newTaskTitle}
                     onChange={(e) => onNewTaskTitleChange(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') onAddNode(); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') onAddNode(null); }}
                     className="max-w-xs mr-0 rounded-r-none"
                 />
-                <Button onClick={onAddNode} className="rounded-l-none">
+                <Button onClick={() => onAddNode(null)} className="rounded-l-none">
                     <Plus />
                 </Button>
             </div>

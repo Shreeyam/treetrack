@@ -37,6 +37,14 @@ const FlowArea = memo(({
 }) => {
     const [canvasMenu, setCanvasMenu] = React.useState({ visible: false, x: 0, y: 0 });
     const { zoomIn, zoomOut, fitView } = useReactFlow();
+    const [reactFlowInstance, setReactFlowInstance] = React.useState(null);
+
+    const handleInit = useCallback((instance) => {
+        setReactFlowInstance(instance);
+        if (onInit) {
+            onInit(instance);
+        }
+    }, [onInit]);
 
     const handlePaneContextMenu = useCallback((event) => {
         event.preventDefault();
@@ -53,9 +61,11 @@ const FlowArea = memo(({
     }, []);
 
     const handleAddNode = useCallback(() => {
-        onAddNode({ x: canvasMenu.x, y: canvasMenu.y });
+        if (!reactFlowInstance) return;
+        const position = reactFlowInstance.screenToFlowPosition({ x: canvasMenu.x, y: canvasMenu.y });
+        onAddNode(position);
         handleCloseCanvasMenu();
-    }, [canvasMenu, onAddNode]);
+    }, [canvasMenu, onAddNode, reactFlowInstance]);
 
     const handlePaneClick = useCallback((event) => {
         onPaneClick(event);
@@ -75,7 +85,7 @@ const FlowArea = memo(({
                 onSelectionChange={onSelectionChange}
                 onPaneClick={handlePaneClick}
                 onContextMenu={handlePaneContextMenu}
-                onInit={onInit}
+                onInit={handleInit}
                 fitView
             >
                 {minimapOn && (

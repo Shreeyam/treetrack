@@ -30,7 +30,7 @@ const TaskContextMenu = memo(({
                 top: y,
                 left: x,
                 minWidth: '150px',
-                zIndex: 1000
+                zIndex: 90
             }}
             onClick={(e) => e.stopPropagation()}
         >
@@ -68,9 +68,7 @@ const TaskContextMenu = memo(({
                 <li
                     className="p-2 cursor-pointer hover:bg-gray-100 flex items-center space-x-2 text-destructive"
                     onClick={() => {
-                        if (window.confirm("Are you sure you want to delete the subtree?")) {
-                            onDeleteSubtree(node);
-                        }
+                        onDeleteSubtree(node);
                         onClose();
                     }}
                 >
@@ -93,7 +91,7 @@ const TaskContextMenu = memo(({
                         ))}
                     </div>
                     <Button size="sm" className="w-full" variant="outline" onClick={() => {
-                        onUpdateColor(node, '');
+                        onUpdateColor(node, '#FFFFFF');
                         onClose();
                     }}>
                         <DropletOff /> Reset Color

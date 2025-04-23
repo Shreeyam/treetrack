@@ -37,6 +37,7 @@ const TopBar = memo(({
     backgroundOn,
     setBackgroundOn,
     onAutoArrange,
+    onFitView,
     currentProject,
     projects,
     onProjectChange,
@@ -54,10 +55,10 @@ const TopBar = memo(({
                     placeholder="New task title..."
                     value={newTaskTitle}
                     onChange={(e) => onNewTaskTitleChange(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') onAddNode(); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') onAddNode(null); }}
                     className="max-w-xs mr-0 rounded-r-none"
                 />
-                <Button onClick={onAddNode} className="rounded-l-none">
+                <Button onClick={() => onAddNode(null)} className="rounded-l-none">
                     <Plus />
                 </Button>
             </div>
@@ -85,7 +86,10 @@ const TopBar = memo(({
                 </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button variant="outline" onClick={onAutoArrange}>
+            <Button variant="outline" onClick={() => {
+                onAutoArrange();
+                onFitView(); // Enable fit view after auto-arranging
+            }}>
                 <WandSparkles /> Auto Arrange
             </Button>
             {
@@ -157,7 +161,7 @@ const TopBar = memo(({
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem disabled className="opacity-50">
-                            Treetrack v0.1.0<br />{BUILD_DATE}
+                            Treetrack v0.1.1<br />{BUILD_DATE}
                         </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>

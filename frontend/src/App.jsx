@@ -13,6 +13,7 @@ import { fetchUser, fetchProjects, createProject, deleteProject, fetchTasksAndEd
 import ChatBot from './components/misc/chatbot';
 import { createAddNewNode, mapWithChangeDetection } from './utils/nodeFunctions';
 import { useNavigate } from 'react-router';
+import { PromptDialog } from '@/components/ui/prompt-dialog';
 
 // Memoize imported components
 const MemoAuthForm = React.memo(AuthForm);
@@ -47,6 +48,12 @@ function App({user, setUser}) {
     const [lastNodePosition, setLastNodePosition] = useState(null); // Initialize to null
     const [cascadeCount, setCascadeCount] = useState(0); // Track cascade steps
     const [cascadeStartPoint, setCascadeStartPoint] = useState(null); // Track start of current cascade sequence
+    const [editDialogOpen, setEditDialogOpen] = useState(false);
+    const [nodeToEdit, setNodeToEdit] = useState(null);
+    const [deleteProjectDialog, setDeleteProjectDialog] = useState(false);
+    const [deleteSubtreeDialog, setDeleteSubtreeDialog] = useState(false);
+    const [nodeToDeleteSubtree, setNodeToDeleteSubtree] = useState(null);
+    const [createProjectDialog, setCreateProjectDialog] = useState(false);
 
     // React Flow
     const reactFlowWrapper = useRef(null);
@@ -141,8 +148,11 @@ function App({user, setUser}) {
 
     // --- Project Management ---
     const handleCreateProject = useCallback(() => {
-        const name = prompt('Enter new project name:');
-        if (name) {
+        setCreateProjectDialog(true);
+    }, []);
+
+    const handleConfirmCreateProject = useCallback((name) => {
+        if (name && name.trim()) {
             createProject(name)
                 .then(data => {
                     fetchProjects()
@@ -151,18 +161,22 @@ function App({user, setUser}) {
                 })
                 .catch(err => console.error(err));
         }
+        setCreateProjectDialog(false);
     }, []);
 
     const handleDeleteProject = useCallback(() => {
-        if (window.confirm("Are you sure you want to delete this project? All data will be lost.")) {
-            deleteProject(currentProject)
-                .then(() => {
-                    fetchProjects()
-                        .then(projectsData => setProjects(projectsData.projects));
-                    setCurrentProject('');
-                })
-                .catch(err => console.error(err));
-        }
+        setDeleteProjectDialog(true);
+    }, []);
+
+    const handleConfirmDeleteProject = useCallback(() => {
+        deleteProject(currentProject)
+            .then(() => {
+                fetchProjects()
+                    .then(projectsData => setProjects(projectsData.projects));
+                setCurrentProject('');
+            })
+            .catch(err => console.error(err));
+        setDeleteProjectDialog(false);
     }, [currentProject]);
 
     // --- Node Management ---
@@ -254,7 +268,22 @@ function App({user, setUser}) {
     );
 
     const addNewNode = useCallback(
-        createAddNewNode({ newTaskTitle, currentProject, reactFlowInstance, reactFlowWrapper, lastNodePosition, cascadeCount, cascadeStartPoint, createNodeStyle, setCascadeCount, setCascadeStartPoint, setLastNodePosition, setNewTaskTitle, setNodes }),
+        (position) => createAddNewNode({ 
+            newTaskTitle, 
+            currentProject, 
+            reactFlowInstance, 
+            reactFlowWrapper, 
+            lastNodePosition, 
+            cascadeCount, 
+            cascadeStartPoint, 
+            createNodeStyle, 
+            setCascadeCount, 
+            setCascadeStartPoint, 
+            setLastNodePosition, 
+            setNewTaskTitle, 
+            setNodes,
+            position
+        })(),
         [newTaskTitle, currentProject, reactFlowInstance, reactFlowWrapper, lastNodePosition, cascadeCount, cascadeStartPoint, createNodeStyle]
     );
 
@@ -373,22 +402,28 @@ function App({user, setUser}) {
     }, [currentProject, createNodeStyle]);
 
     const handleEditNode = useCallback((node) => {
-        const newTitle = prompt('Edit task title', node.data.label);
-        if (newTitle && newTitle.trim()) {
+        setNodeToEdit(node);
+        setEditDialogOpen(true);
+    }, []);
+
+    const handleEditSubmit = useCallback((newTitle) => {
+        if (newTitle && newTitle.trim() && nodeToEdit) {
             setNodes(prev =>
-                prev.map(n => n.id === node.id ? { ...n, data: { ...n.data, label: newTitle } } : n)
+                prev.map(n => n.id === nodeToEdit.id ? { ...n, data: { ...n.data, label: newTitle } } : n)
             );
 
-            updateTask(node.id, {
+            updateTask(nodeToEdit.id, {
                 title: newTitle,
-                posX: node.position.x,
-                posY: node.position.y,
-                color: node.data.color,
-                completed: node.data.completed ? 1 : 0,
+                posX: nodeToEdit.position.x,
+                posY: nodeToEdit.position.y,
+                color: nodeToEdit.data.color,
+                completed: nodeToEdit.data.completed ? 1 : 0,
                 project_id: parseInt(currentProject)
             });
         }
-    }, [currentProject]);
+        setEditDialogOpen(false);
+        setNodeToEdit(null);
+    }, [nodeToEdit, currentProject]);
 
     const handleDeleteNode = useCallback((node) => {
         deleteTask(node.id);
@@ -397,19 +432,29 @@ function App({user, setUser}) {
     }, []);
 
     const handleDeleteSubtree = useCallback((node) => {
+        setNodeToDeleteSubtree(node);
+        setDeleteSubtreeDialog(true);
+    }, []);
+
+    const handleConfirmDeleteSubtree = useCallback(() => {
+        if (!nodeToDeleteSubtree) return;
+        
         const toDelete = new Set();
         const dfs = (nodeId) => {
             if (toDelete.has(nodeId)) return;
             toDelete.add(nodeId);
             edges.filter(e => e.source === nodeId).forEach(e => dfs(e.target));
         };
-        dfs(node.id);
+        dfs(nodeToDeleteSubtree.id);
         toDelete.forEach(nodeId => {
             deleteTask(nodeId);
         });
         setNodes(prev => prev.filter(n => !toDelete.has(n.id)));
         setEdges(prev => prev.filter(e => !toDelete.has(e.source) && !toDelete.has(e.target)));
-    }, [edges]);
+        
+        setDeleteSubtreeDialog(false);
+        setNodeToDeleteSubtree(null);
+    }, [nodeToDeleteSubtree, edges]);
 
     const handleGenerativeEdit = useCallback((data) => {
         // --- Capture previous state BEFORE applying changes ---
@@ -844,6 +889,7 @@ function App({user, setUser}) {
 
     const handleNodeContextMenu = useCallback((event, node) => {
         event.preventDefault();
+        event.stopPropagation();  // Prevent the event from bubbling up to the pane
         const bounds = reactFlowWrapper.current.getBoundingClientRect();
         const x = event.clientX - bounds.left;
         const y = event.clientY - bounds.top;
@@ -883,6 +929,7 @@ function App({user, setUser}) {
                 backgroundOn={backgroundOn}
                 setBackgroundOn={setBackgroundOn}
                 onAutoArrange={handleAutoArrange}
+                onFitView={() => reactFlowInstance?.fitView()}
                 currentProject={currentProject}
                 projects={projects}
                 onProjectChange={setCurrentProject}
@@ -915,8 +962,47 @@ function App({user, setUser}) {
                     minimapOn={minimapOn}
                     backgroundOn={backgroundOn}
                     onInit={setReactFlowInstance}
+                    onAddNode={addNewNode}
+                    onAutoArrange={handleAutoArrange}
                 />
             </ReactFlowProvider>
+            <PromptDialog
+                open={editDialogOpen}
+                title="Edit Task Title"
+                defaultValue={nodeToEdit?.data.label || ""}
+                placeholder="Enter task title"
+                onSubmit={handleEditSubmit}
+                onCancel={() => {
+                    setEditDialogOpen(false);
+                    setNodeToEdit(null);
+                }}
+            />
+            <PromptDialog
+                open={deleteProjectDialog}
+                title="Delete Project"
+                description="Are you sure you want to delete this project? All data will be lost."
+                mode="confirm"
+                onSubmit={handleConfirmDeleteProject}
+                onCancel={() => setDeleteProjectDialog(false)}
+            />
+            <PromptDialog
+                open={deleteSubtreeDialog}
+                title="Delete Subtree"
+                description="Are you sure you want to delete this task and all its dependencies? This action cannot be undone."
+                mode="confirm"
+                onSubmit={handleConfirmDeleteSubtree}
+                onCancel={() => {
+                    setDeleteSubtreeDialog(false);
+                    setNodeToDeleteSubtree(null);
+                }}
+            />
+            <PromptDialog
+                open={createProjectDialog}
+                title="Create New Project"
+                placeholder="Enter project name"
+                onSubmit={handleConfirmCreateProject}
+                onCancel={() => setCreateProjectDialog(false)}
+            />
         </div>
     );
 }

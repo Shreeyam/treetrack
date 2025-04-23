@@ -16,97 +16,111 @@ export function createAddNewNode({
     setCascadeStartPoint,
     setLastNodePosition,
     setNewTaskTitle,
-    setNodes
+    setNodes,
+    position = null // Add optional position parameter
 }) {
     // Constants for cascading logic
-    const CASCADE_OFFSET = 50
-    const VIEWPORT_START_OFFSET = { x: 50, y: 50 }
-    const NODE_WIDTH = 150
-    const NODE_HEIGHT = 50
+    const CASCADE_OFFSET = 50;
+    const VIEWPORT_START_OFFSET = { x: 50, y: 50 };
+    const NODE_WIDTH = 150;
+    const NODE_HEIGHT = 50;
+    const DEFAULT_COLOR = '#ffffff';
 
     return () => {
-        if (!newTaskTitle.trim() || !reactFlowInstance || !reactFlowWrapper.current) {
-            return
+        if (!reactFlowInstance || !reactFlowWrapper.current) {
+            return;
         }
 
-        // --- compute newPosition just like before ---
-        const viewport = reactFlowInstance.getViewport()
-        const bounds = reactFlowWrapper.current.getBoundingClientRect()
-        let newPosition
-
-        const flowStartX = (VIEWPORT_START_OFFSET.x - viewport.x) / viewport.zoom
-        const flowStartY = (VIEWPORT_START_OFFSET.y - viewport.y) / viewport.zoom
-        const initialCascadePoint = { x: flowStartX, y: flowStartY }
-
-        let isLastPosVisible = false
-        if (lastNodePosition) {
-            const screenX = lastNodePosition.x * viewport.zoom + viewport.x
-            const screenY = lastNodePosition.y * viewport.zoom + viewport.y
-            if (
-                screenX > 0 &&
-                screenX + NODE_WIDTH + CASCADE_OFFSET < bounds.width &&
-                screenY > 0 &&
-                screenY + NODE_HEIGHT + CASCADE_OFFSET < bounds.height
-            ) {
-                isLastPosVisible = true
-            }
-        }
-
-        if (lastNodePosition && isLastPosVisible) {
-            const candidatePos = {
-                x: lastNodePosition.x + CASCADE_OFFSET,
-                y: lastNodePosition.y + CASCADE_OFFSET
-            }
-            const candScreenX = candidatePos.x * viewport.zoom + viewport.x
-            const candScreenY = candidatePos.y * viewport.zoom + viewport.y
-            const isCandidateVisible =
-                candScreenX + NODE_WIDTH + CASCADE_OFFSET > 0 &&
-                candScreenX + NODE_WIDTH + CASCADE_OFFSET < bounds.width &&
-                candScreenY + NODE_HEIGHT + CASCADE_OFFSET > 0 &&
-                candScreenY + NODE_HEIGHT + CASCADE_OFFSET < bounds.height
-
-            if (isCandidateVisible) {
-                newPosition = candidatePos
-                setCascadeCount(prev => prev + 1)
-            } else {
-                const startPoint = cascadeStartPoint || initialCascadePoint
-                newPosition = {
-                    x: startPoint.x,
-                    y: startPoint.y + CASCADE_OFFSET
-                }
-                setCascadeStartPoint(newPosition)
-                setCascadeCount(1)
-            }
+        let newPosition;
+        const viewport = reactFlowInstance.getViewport();
+        const bounds = reactFlowWrapper.current.getBoundingClientRect();
+        const flowStartX = (VIEWPORT_START_OFFSET.x - viewport.x) / viewport.zoom;
+        const flowStartY = (VIEWPORT_START_OFFSET.y - viewport.y) / viewport.zoom;
+        const initialCascadePoint = { x: flowStartX, y: flowStartY };
+        
+        // If a specific position is provided (e.g. from context menu), use that
+        if (position) {
+            newPosition = {
+                x: position.x,
+                y: position.y
+            };
         } else {
-            newPosition = initialCascadePoint
-            setCascadeStartPoint(initialCascadePoint)
-            setCascadeCount(1)
+            let isLastPosVisible = false;
+            if (lastNodePosition && typeof lastNodePosition.x === 'number' && typeof lastNodePosition.y === 'number') {
+                const screenX = lastNodePosition.x * viewport.zoom + viewport.x;
+                const screenY = lastNodePosition.y * viewport.zoom + viewport.y;
+                if (
+                    screenX > 0 &&
+                    screenX + NODE_WIDTH + CASCADE_OFFSET < bounds.width &&
+                    screenY > 0 &&
+                    screenY + NODE_HEIGHT + CASCADE_OFFSET < bounds.height
+                ) {
+                    isLastPosVisible = true;
+                }
+            }
+
+            if (lastNodePosition && isLastPosVisible) {
+                const candidatePos = {
+                    x: lastNodePosition.x + CASCADE_OFFSET,
+                    y: lastNodePosition.y + CASCADE_OFFSET
+                };
+                const candScreenX = candidatePos.x * viewport.zoom + viewport.x;
+                const candScreenY = candidatePos.y * viewport.zoom + viewport.y;
+                const isCandidateVisible =
+                    candScreenX + NODE_WIDTH + CASCADE_OFFSET > 0 &&
+                    candScreenX + NODE_WIDTH + CASCADE_OFFSET < bounds.width &&
+                    candScreenY + NODE_HEIGHT + CASCADE_OFFSET > 0 &&
+                    candScreenY + NODE_HEIGHT + CASCADE_OFFSET < bounds.height;
+
+                if (isCandidateVisible) {
+                    newPosition = candidatePos;
+                    setCascadeCount(prev => prev + 1);
+                } else {
+                    const startPoint = cascadeStartPoint || initialCascadePoint;
+                    newPosition = {
+                        x: startPoint.x,
+                        y: startPoint.y + CASCADE_OFFSET
+                    };
+                    setCascadeStartPoint(newPosition);
+                    setCascadeCount(1);
+                }
+            } else {
+                newPosition = initialCascadePoint;
+                setCascadeStartPoint(initialCascadePoint);
+                setCascadeCount(1);
+            }
         }
 
-        // --- optimistic insertion ---
-        const tempId = `temp-${uuidv4()}`
+        // Ensure position values are valid numbers
+        if (!newPosition || typeof newPosition.x !== 'number' || typeof newPosition.y !== 'number') {
+            newPosition = initialCascadePoint;
+        }
+
+        const taskTitle = newTaskTitle.trim() || 'New Task';
+        const tempId = `temp-${Date.now()}`;
         const optimisticNode = {
             id: tempId,
-            data: { label: newTaskTitle, completed: false, color: '' },
+            data: { label: taskTitle, completed: false, color: DEFAULT_COLOR },
             position: newPosition,
-            style: createNodeStyle('#ffffff', false),
+            style: createNodeStyle(DEFAULT_COLOR, false),
             sourcePosition: 'right',
             targetPosition: 'left'
-        }
+        };
 
-        setNodes(nodes => [...nodes, optimisticNode])
-        setNewTaskTitle('')
-        setLastNodePosition(newPosition)
+        setNodes(nodes => [...nodes, optimisticNode]);
+        setNewTaskTitle('');
+        setLastNodePosition(newPosition);
+
 
         // --- send to server ---
         const newTask = {
-            title: newTaskTitle,
+            title: taskTitle,
             posX: newPosition.x,
             posY: newPosition.y,
             completed: 0,
             project_id: parseInt(currentProject, 10),
-            color: ''
-        }
+            color: DEFAULT_COLOR
+        };
 
         fetch('/api/tasks', {
             method: 'POST',
@@ -123,15 +137,14 @@ export function createAddNewNode({
                             ? { ...n, id: json.id.toString() }
                             : n
                     )
-                )
+                );
             })
             .catch(err => {
-                console.error('Failed to create task:', err)
+                console.error('Failed to create task:', err);
                 // roll back optimistic node
-                setNodes(nodes => nodes.filter(n => n.id !== tempId))
-                // optionally: notify the user of the failure
-            })
-    }
+                setNodes(nodes => nodes.filter(n => n.id !== tempId));
+            });
+    };
 }
 
 // Utility to only return a new array if something actually changed

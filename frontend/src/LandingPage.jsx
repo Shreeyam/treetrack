@@ -5,6 +5,7 @@ import {
     Network,
     Clock,
     Sparkle,
+    Bot,
 } from "lucide-react";
 import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
@@ -84,7 +85,7 @@ export default function TreetrackLanding() {
                             noise and get instant clarity on what's actionable right now.
                         </p>
                     </div>
-                    <div className="relative overflow-hidden rounded-lg shadow-lg aspect-video bg-muted flex items-center justify-center">
+                    <div className="relative overflow-hidden rounded-lg aspect-video  flex items-center justify-center">
                         <Network className="h-16 w-16 text-muted-foreground" />
                     </div>
                 </div>
@@ -106,19 +107,8 @@ export default function TreetrackLanding() {
                         </p>
                     </div>
 
-                    {/* Video is forced below on mobile, but moves to the left on desktop */}
-                    <div className="relative overflow-hidden rounded-lg shadow-lg aspect-video order-last lg:order-first">
-                        <video
-                            id="treetrack-demo"
-                            className="absolute inset-0 w-full h-full object-cover"
-                            autoPlay
-                            muted
-                            loop
-                            playsInline
-                        >
-                            <source src={bgVideoMp4} type="video/mp4" />
-                            Your browser doesn’t support HTML5 video.
-                        </video>
+                    <div className="relative overflow-hidden rounded-lg aspect-video flex order-last items-center justify-center lg:order-first">
+                        <Bot className="h-16 w-16 text-muted-foreground"/>
                     </div>
                 </div>
             </section>
@@ -137,7 +127,7 @@ export default function TreetrackLanding() {
                             to tackle next to stay on track.
                         </p>
                     </div>
-                    <div className="relative overflow-hidden rounded-lg shadow-lg aspect-video bg-muted flex items-center justify-center">
+                    <div className="relative overflow-hidden rounded-lg aspect-video flex items-center justify-center">
                         <Clock className="h-16 w-16 text-muted-foreground" />
                     </div>
                 </div>

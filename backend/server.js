@@ -574,6 +574,8 @@ app.post('/api/bulk-change', isAuthenticated, async (req, res) => {
 
 
 // --- Start the server ---
-app.listen(port, () => {
-  console.log(`Server listening on port ${port}`);
-});
+if (require.main === module) {
+  app.listen(port, () => console.log(`Server listening on ${port}`));
+}
+
+export default app; // Export the app for testing purposes     

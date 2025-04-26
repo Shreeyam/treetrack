@@ -15,7 +15,7 @@
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
-    "test": "vitest"
+    "test": "vitest",
     "start": "node index.js"
   },
   "keywords": [],

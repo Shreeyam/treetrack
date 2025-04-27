@@ -879,6 +879,15 @@ function App({user, setUser}) {
         return mapWithChangeDetection(visibleNodes, node => {
             // compute the one‑off style override
             let nextStyle = node.style;
+
+            // Track downstream and upstream nodes of the selected node
+            const isDownstream = selectedNodes.length === 1 && edges.some(e => 
+                e.source === selectedNodes[0].id && e.target === node.id
+            );
+            const isUpstream = selectedNodes.length === 1 && edges.some(e => 
+                e.target === selectedNodes[0].id && e.source === node.id
+            );
+
             if (
                 unlinkHighlight &&
                 (node.id === unlinkHighlight.source || node.id === unlinkHighlight.target)
@@ -890,6 +899,10 @@ function App({user, setUser}) {
                     backgroundColor: node.data.color || '#ffffff',
                     outline: '2px solid green',
                 };
+            } else if (isDownstream) {
+                nextStyle = { ...nextStyle, outline: '2px solid #FFD700' }; // Yellow for downstream
+            } else if (isUpstream) {
+                nextStyle = { ...nextStyle, outline: '2px solid #9370DB' }; // Purple for upstream
             } else if (highlightNext) {
                 nextStyle = nextTaskIds.has(node.id)
                     ? { ...nextStyle, opacity: 1 }
@@ -907,6 +920,8 @@ function App({user, setUser}) {
         selectedSource,
         highlightNext,
         nextTaskIds,
+        edges,
+        selectedNodes
     ]);
 
     const handleNodeContextMenu = useCallback((event, node) => {

@@ -36,6 +36,8 @@ const TopBar = memo(({
     setMinimapOn,
     backgroundOn,
     setBackgroundOn,
+    snapToGridOn,
+    setSnapToGridOn,
     onAutoArrange,
     onFitView,
     currentProject,
@@ -82,6 +84,9 @@ const TopBar = memo(({
                     </DropdownMenuCheckboxItem>
                     <DropdownMenuCheckboxItem checked={backgroundOn} onCheckedChange={setBackgroundOn}>
                         Show Background
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem checked={snapToGridOn} onCheckedChange={setSnapToGridOn}>
+                        Snap to Grid
                     </DropdownMenuCheckboxItem>
                 </DropdownMenuContent>
             </DropdownMenu>

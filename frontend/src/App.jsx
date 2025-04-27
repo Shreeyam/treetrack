@@ -38,10 +38,11 @@ function App({user, setUser}) {
     const [selectedUnlinkSource, setSelectedUnlinkSource] = useState(null);
     const [unlinkHighlight, setUnlinkHighlight] = useState(null);
     const [newTaskTitle, setNewTaskTitle] = useState('');
-    const [hideCompleted, setHideCompleted] = useState(false);
-    const [highlightNext, setHighlightNext] = useState(false);
-    const [minimapOn, setMinimapOn] = useState(false);
-    const [backgroundOn, setBackgroundOn] = useState(true);
+    const [hideCompleted, setHideCompleted] = useState(() => localStorage.getItem('hideCompleted') === 'true');
+    const [highlightNext, setHighlightNext] = useState(() => localStorage.getItem('highlightNext') === 'true');
+    const [minimapOn, setMinimapOn] = useState(() => localStorage.getItem('minimapOn') === 'true');
+    const [backgroundOn, setBackgroundOn] = useState(() => localStorage.getItem('backgroundOn') !== 'false');
+    const [snapToGridOn, setSnapToGridOn] = useState(() => localStorage.getItem('snapToGridOn') !== 'false');
     const [selectedNodes, setSelectedNodes] = useState([]);
     const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, node: null });
     const [generativeMode, setGenerativeMode] = useState(false);
@@ -145,6 +146,27 @@ function App({user, setUser}) {
         fetch('/api/logout', { method: 'POST', credentials: 'include' })
             .then(() => setUser(null));
     }, []);
+
+    // --- View Options Persistence ---
+    useEffect(() => {
+        localStorage.setItem('hideCompleted', hideCompleted);
+    }, [hideCompleted]);
+
+    useEffect(() => {
+        localStorage.setItem('highlightNext', highlightNext);
+    }, [highlightNext]);
+
+    useEffect(() => {
+        localStorage.setItem('minimapOn', minimapOn);
+    }, [minimapOn]);
+
+    useEffect(() => {
+        localStorage.setItem('backgroundOn', backgroundOn);
+    }, [backgroundOn]);
+
+    useEffect(() => {
+        localStorage.setItem('snapToGridOn', snapToGridOn);
+    }, [snapToGridOn]);
 
     // --- Project Management ---
     const handleCreateProject = useCallback(() => {
@@ -928,6 +950,8 @@ function App({user, setUser}) {
                 setMinimapOn={setMinimapOn}
                 backgroundOn={backgroundOn}
                 setBackgroundOn={setBackgroundOn}
+                snapToGridOn={snapToGridOn}
+                setSnapToGridOn={setSnapToGridOn}
                 onAutoArrange={handleAutoArrange}
                 onFitView={() => reactFlowInstance?.fitView()}
                 currentProject={currentProject}
@@ -961,6 +985,7 @@ function App({user, setUser}) {
                     onCloseContextMenu={handleCloseContextMenu}
                     minimapOn={minimapOn}
                     backgroundOn={backgroundOn}
+                    snapToGridOn={snapToGridOn}
                     onInit={setReactFlowInstance}
                     onAddNode={addNewNode}
                     onAutoArrange={handleAutoArrange}

@@ -31,6 +31,7 @@ const FlowArea = memo(({
     onCloseContextMenu,
     minimapOn,
     backgroundOn,
+    snapToGridOn,
     onInit,
     onAddNode,
     onAutoArrange
@@ -90,6 +91,8 @@ const FlowArea = memo(({
                 onPaneClick={handlePaneClick}
                 onContextMenu={handlePaneContextMenu}
                 onInit={handleInit}
+                snapToGrid={snapToGridOn}
+                snapGrid={[10, 10]}
                 fitView
             >
                 {minimapOn && (

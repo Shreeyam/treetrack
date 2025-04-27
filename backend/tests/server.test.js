@@ -10,35 +10,35 @@ const TEST_SESSIONS_DB_PATH = ':memory:'; // Use in-memory database for sessions
 
 // --- Mocking ---
 // Mock OpenAI before importing the app
-vi.mock('openai', () => {
-    const mockCompletionData = {
-        choices: [{
-            message: {
-                content: JSON.stringify({
-                    tasks: [{ id: -1, title: "Mock Task", posX: 0, posY: 0, completed: 0, project_id: 0, user_id: 0, color: "#aabbcc", locked: 0, draft: 1 }],
-                    dependencies: [],
-                    summary: "Mocked AI summary."
-                })
-            }
-        }]
-    };
-    return {
-        default: vi.fn().mockImplementation(() => ({
-            chat: {
-                completions: {
-                    create: vi.fn().mockResolvedValue(mockCompletionData),
-                }
-            }
-        })),
-        OpenAI: vi.fn().mockImplementation(() => ({
-            chat: {
-                completions: {
-                    create: vi.fn().mockResolvedValue(mockCompletionData),
-                }
-            }
-        })),
-    };
+// 1. Define the core mock function for the AI call
+const mockCreateCompletion = vi.fn().mockResolvedValue({ // Default success response
+    choices: [{
+        message: {
+            content: JSON.stringify({
+                tasks: [{ id: -1, title: "Mock Task", posX: 0, posY: 0, completed: 0, project_id: 0, user_id: 0, color: "#aabbcc", locked: 0, draft: 1 }],
+                dependencies: [],
+                summary: "Mocked AI summary."
+            })
+        }
+    }]
 });
+
+// 2. Create the structure the OpenAI instance expects
+const mockOpenAIInstance = {
+    chat: {
+        completions: {
+            create: mockCreateCompletion // Use the mock function here
+        }
+    }
+};
+
+// 3. Set up the module mock using the instance structure
+vi.mock('openai', () => ({
+    // Mock the named export 'OpenAI' which is used by server.js
+    OpenAI: vi.fn().mockImplementation(() => mockOpenAIInstance),
+    // Keep the default export mock just in case, pointing to the same instance
+    default: vi.fn().mockImplementation(() => mockOpenAIInstance),
+}));
 
 // Mock rate limiter to avoid interference during tests
 vi.mock('express-rate-limit', () => ({

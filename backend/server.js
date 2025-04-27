@@ -432,10 +432,13 @@ Please generate an updated project plan based on this user input: '${userInput}'
       temperature: 0.7,
     });
 
+    // Check if the response is valid.
+    
+
     const responseText = completion.choices[0].message.content.replace("```json", "").replace("```", "").trim();
 
     // Post-process the response to affix project, user id
-    responseTasks = JSON.parse(responseText);
+    let responseTasks = JSON.parse(responseText);
 
     responseTasks.tasks.forEach(task => {
       task.project_id = projectId;

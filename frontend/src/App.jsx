@@ -43,6 +43,7 @@ function App({user, setUser}) {
     const [minimapOn, setMinimapOn] = useState(() => localStorage.getItem('minimapOn') === 'true');
     const [backgroundOn, setBackgroundOn] = useState(() => localStorage.getItem('backgroundOn') !== 'false');
     const [snapToGridOn, setSnapToGridOn] = useState(() => localStorage.getItem('snapToGridOn') !== 'false');
+    const [showUpDownstream, setShowUpDownstream] = useState(() => localStorage.getItem('showUpDownstream') === 'true');
     const [selectedNodes, setSelectedNodes] = useState([]);
     const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, node: null });
     const [generativeMode, setGenerativeMode] = useState(false);
@@ -167,6 +168,10 @@ function App({user, setUser}) {
     useEffect(() => {
         localStorage.setItem('snapToGridOn', snapToGridOn);
     }, [snapToGridOn]);
+
+    useEffect(() => {
+        localStorage.setItem('showUpDownstream', showUpDownstream);
+    }, [showUpDownstream]);
 
     // --- Project Management ---
     const handleCreateProject = useCallback(() => {
@@ -899,9 +904,9 @@ function App({user, setUser}) {
                     backgroundColor: node.data.color || '#ffffff',
                     outline: '2px solid green',
                 };
-            } else if (isDownstream) {
+            } else if (showUpDownstream && isDownstream) {
                 nextStyle = { ...nextStyle, outline: '2px solid #FFD700' }; // Yellow for downstream
-            } else if (isUpstream) {
+            } else if (showUpDownstream && isUpstream) {
                 nextStyle = { ...nextStyle, outline: '2px solid #9370DB' }; // Purple for upstream
             } else if (highlightNext) {
                 nextStyle = nextTaskIds.has(node.id)
@@ -921,7 +926,8 @@ function App({user, setUser}) {
         highlightNext,
         nextTaskIds,
         edges,
-        selectedNodes
+        selectedNodes,
+        showUpDownstream
     ]);
 
     const handleNodeContextMenu = useCallback((event, node) => {
@@ -967,6 +973,8 @@ function App({user, setUser}) {
                 setBackgroundOn={setBackgroundOn}
                 snapToGridOn={snapToGridOn}
                 setSnapToGridOn={setSnapToGridOn}
+                showUpDownstream={showUpDownstream}
+                setShowUpDownstream={setShowUpDownstream}
                 onAutoArrange={handleAutoArrange}
                 onFitView={() => reactFlowInstance?.fitView()}
                 currentProject={currentProject}

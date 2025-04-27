@@ -49,6 +49,8 @@ const TopBar = memo(({
     onLogout,
     generativeMode,
     setGenerativeMode,
+    showUpDownstream,
+    setShowUpDownstream,
 }) => {
     return (
         <div className="p-2 border-1 border-neutral-200 flex flex-wrap items-center space-x-2">
@@ -87,6 +89,9 @@ const TopBar = memo(({
                     </DropdownMenuCheckboxItem>
                     <DropdownMenuCheckboxItem checked={snapToGridOn} onCheckedChange={setSnapToGridOn}>
                         Snap to Grid
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem checked={showUpDownstream} onCheckedChange={setShowUpDownstream}>
+                        Show Upstream/Downstream
                     </DropdownMenuCheckboxItem>
                 </DropdownMenuContent>
             </DropdownMenu>

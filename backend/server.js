@@ -424,7 +424,7 @@ Please generate an updated project plan based on this user input: '${userInput}'
 
   try {
     const completion = await openai.chat.completions.create({
-      model: "gemini-2.0-flash", // Change model if desired.
+      model: "gemini-2.5-flash-preview-04-17", // Change model if desired.
       messages: messages,
       temperature: 0.7,
     });

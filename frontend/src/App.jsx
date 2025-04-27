@@ -43,7 +43,7 @@ function App({user, setUser}) {
     const [minimapOn, setMinimapOn] = useState(() => localStorage.getItem('minimapOn') === 'true');
     const [backgroundOn, setBackgroundOn] = useState(() => localStorage.getItem('backgroundOn') !== 'false');
     const [snapToGridOn, setSnapToGridOn] = useState(() => localStorage.getItem('snapToGridOn') !== 'false');
-    const [showUpDownstream, setShowUpDownstream] = useState(() => localStorage.getItem('showUpDownstream') === 'true');
+    const [showUpDownstream, setShowUpDownstream] = useState(() => localStorage.getItem('showUpDownstream') !== 'false');
     const [selectedNodes, setSelectedNodes] = useState([]);
     const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, node: null });
     const [generativeMode, setGenerativeMode] = useState(false);

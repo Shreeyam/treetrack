@@ -1,7 +1,6 @@
 import React, { memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import SparklyUpgradeButton from '@/components/ui/upgradeButton';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -16,7 +15,7 @@ import {
     Sparkles,
     Gem,
     FolderPlus,
-    Trash,
+    FolderMinus,
     User,
     MessageCirclePlus,
     Coffee,
@@ -139,7 +138,7 @@ const TopBar = memo(({
                     <FolderPlus /> New
                 </Button>
                 <Button variant="destructive" onClick={onDeleteProject}>
-                    <Trash />
+                    <FolderMinus />
                 </Button>
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>

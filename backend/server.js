@@ -1,17 +1,15 @@
 // server.js
 import express from 'express';
-import sqlite3pkg from 'sqlite3';
-const sqlite3 = sqlite3pkg.verbose();
+import Database from 'better-sqlite3';
+import BetterSqlite3Store from 'better-sqlite3-session-store';
 import cors from 'cors';
 import session from 'express-session';
-import connectSqlite3 from 'connect-sqlite3';
 import bcrypt from 'bcrypt';
 import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
 import OpenAI from 'openai';
 import 'dotenv/config';
 
-const SQLiteStore = connectSqlite3(session);
 
 // const openai = new OpenAI();
 const openai = new OpenAI({
@@ -19,90 +17,80 @@ const openai = new OpenAI({
   baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
 });
 
+const SqliteStore = BetterSqlite3Store(session);
+
 const app = express();
-const port = 3001;
 
 app.use(cors({
-  origin: true, // allow credentials from any origin for testing; restrict in production!
+  origin: true,
   credentials: true
 }));
 app.use(express.json());
 
 app.set('trust proxy', 1);
 
-// Configure sessions with a SQLite store.
+// Connect to our main SQLite DB.
+const db = new Database('./todos.db', { verbose: console.log });
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+
+// Configure sessions with a better-sqlite3 store.
+const sessionDb = new Database('sessions.db', { verbose: console.log });
 app.use(session({
-  store: new SQLiteStore({ db: 'sessions.db', dir: './' }),
+  store: new SqliteStore({ client: sessionDb }),
   secret: crypto.randomBytes(64).toString('hex'),
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, secure: process.env.NODE_ENV === 'production', domain: process.env.NODE_ENV === 'production' ? 'treetrack.xyz' : undefined } // 7 days persistence
+  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, secure: process.env.NODE_ENV === 'production', domain: process.env.NODE_ENV === 'production' ? 'treetrack.xyz' : undefined }
 }));
 
-// Connect to our main SQLite DB.
-const db = new sqlite3.Database('./todos.db', (err) => {
-  if (err) {
-    console.error("Error connecting to SQLite database:", err.message);
-  } else {
-    console.log('Connected to SQLite database.');
-    db.run("PRAGMA foreign_keys = ON");
-  }
-});
+// Initialize database schema
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    premium BOOLEAN DEFAULT 0
+  );
+`).run();
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    user_id INTEGER,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`).run();
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    posX REAL DEFAULT 0,
+    posY REAL DEFAULT 0,
+    completed INTEGER DEFAULT 0,
+    project_id INTEGER,
+    user_id INTEGER,
+    color TEXT,
+    locked BOOLEAN DEFAULT 0,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`).run();
 
-db.serialize(() => {
-  // Create the users table.
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      premium BOOLEAN DEFAULT 0
-    )
-  `);
-
-  // Create the projects table (each project belongs to a user).
-  db.run(`
-    CREATE TABLE IF NOT EXISTS projects (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      user_id INTEGER,
-      FOREIGN KEY(user_id) REFERENCES users(id)
-    )
-  `);
-
-  // Create the tasks table.
-  db.run(`
-    CREATE TABLE IF NOT EXISTS tasks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      posX REAL DEFAULT 0,
-      posY REAL DEFAULT 0,
-      completed INTEGER DEFAULT 0,
-      project_id INTEGER,
-      user_id INTEGER,
-      color TEXT,
-      locked BOOLEAN DEFAULT 0,
-      FOREIGN KEY(project_id) REFERENCES projects(id),
-      FOREIGN KEY(user_id) REFERENCES users(id)
-    )
-  `);
-
-  // Create the dependencies table.
-  db.run(`
-    CREATE TABLE IF NOT EXISTS dependencies (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      from_task INTEGER,
-      to_task INTEGER,
-      project_id INTEGER,
-      user_id INTEGER,
-      FOREIGN KEY(from_task) REFERENCES tasks(id) DEFERRABLE INITIALLY DEFERRED,
-      FOREIGN KEY(to_task) REFERENCES tasks(id) DEFERRABLE INITIALLY DEFERRED,
-      FOREIGN KEY(project_id) REFERENCES projects(id),
-      FOREIGN KEY(user_id) REFERENCES users(id)
-    )
-  `);
-});
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS dependencies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_task INTEGER,
+    to_task INTEGER,
+    project_id INTEGER,
+    user_id INTEGER,
+    FOREIGN KEY(from_task) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY(to_task) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`).run();
 
 // Middleware to check for an authenticated user.
 function isAuthenticated(req, res, next) {
@@ -122,59 +110,105 @@ function isPremium(req, res, next) {
 
 // Rate limiter for the login endpoint.
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 55,
   message: "Too many login attempts. Please try again later."
 });
 
-// --- Authentication Endpoints ---
-
 // Register a new user.
-app.post('/api/register', async (req, res) => {
+app.post('/api/register', async (req, res) => { // Make handler async for bcrypt
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: "Missing username or password" });
   }
+
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
-    db.run(
-      "INSERT INTO users (username, password) VALUES (?, ?)",
-      [username, hashedPassword],
-      function (err) {
-        if (err) {
-          return res.status(400).json({ error: err.message });
-        }
-        // Automatically log in the new user.
-        req.session.user = { id: this.lastID, username };
-        res.json({ id: this.lastID, username });
-      }
-    );
+
+    // Use synchronous .run() and get info object
+    const info = db.prepare(
+      "INSERT INTO users (username, password) VALUES (?, ?)"
+    ).run(username, hashedPassword); // Errors will throw here
+
+    const newUser = {
+      id: info.lastInsertRowid,
+      username: username,
+      premium: 0 // Default premium status
+    };
+
+    // Automatically log in the new user by setting the session
+    req.session.user = {
+      id: newUser.id,
+      username: newUser.username,
+      premium: Boolean(newUser.premium) // Ensure boolean
+    };
+    console.log(`User ${newUser.username} registered. Session user set:`, req.session.user);
+
+    res.json({
+      id: newUser.id,
+      username: newUser.username,
+      premium: Boolean(newUser.premium)
+    });
+
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    console.error("Registration error:", error);
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      res.status(400).json({ error: error });
+    } else {
+      res.status(500).json({ error: error });
+    }
   }
 });
 
 // Login endpoint.
-app.post('/api/login', loginLimiter, (req, res) => {
+app.post('/api/login', loginLimiter, async (req, res) => { // Make handler async for bcrypt
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: "Missing username or password" });
   }
-  db.get("SELECT * FROM users WHERE username = ?", [username], async (err, user) => {
-    if (err) return res.status(400).json({ error: err.message });
-    if (!user) return res.status(400).json({ error: "Invalid credentials" });
-    try {
-      const match = await bcrypt.compare(password, user.password);
-      if (match) {
-        req.session.user = { id: user.id, username: user.username, premium: user.premium };
-        res.json({ id: user.id, username: user.username, premium: user.premium });
-      } else {
-        res.status(400).json({ error: "Invalid credentials" });
-      }
-    } catch (error) {
-      res.status(500).json({ error: "Server error" });
+
+  try {
+    // Use synchronous .get() directly
+    const user = db.prepare("SELECT id, username, password, premium FROM users WHERE username = ?").get(username);
+
+    if (!user) {
+      // User not found
+      return res.status(400).json({ error: "Invalid credentials" });
     }
-  });
+
+    // Use await for the async bcrypt comparison
+    const match = await bcrypt.compare(password, user.password);
+
+    if (match) {
+      // --- Login successful ---
+      // Set the session data *before* sending the response
+      req.session.user = {
+        id: user.id,
+        username: user.username,
+        premium: Boolean(user.premium) // Ensure it's a boolean
+      };
+
+      // Optional: Log to confirm session is set server-side
+      console.log(`User ${user.username} logged in. Session user set:`, req.session.user);
+
+      // Save the session explicitly if needed (though usually automatic on modification/response end)
+      // req.session.save(); // Usually not necessary unless ending response early without modification
+
+      res.json({
+        id: user.id,
+        username: user.username,
+        premium: Boolean(user.premium)
+      });
+    } else {
+      // Password incorrect
+      res.status(400).json({ error: "Invalid credentials" });
+    }
+
+  } catch (error) {
+    // Handle potential synchronous DB errors or bcrypt errors
+    console.error("Login error:", error);
+    res.status(500).json({ error: "Server error during login process" });
+  }
 });
 
 // Logout endpoint.
@@ -197,18 +231,22 @@ app.get('/api/me', (req, res) => {
 // --- PROJECT ENDPOINTS (Authenticated) ---
 
 app.get('/api/projects', isAuthenticated, (req, res) => {
-  db.all("SELECT * FROM projects WHERE user_id = ?", [req.session.user.id], (err, rows) => {
-    if (err) return res.status(400).json({ error: err.message });
+  try {
+    const rows = db.prepare("SELECT * FROM projects WHERE user_id = ?").all(req.session.user.id);
     res.json({ projects: rows });
-  });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
 });
 
 app.post('/api/projects', isAuthenticated, (req, res) => {
   const { name } = req.body;
-  db.run("INSERT INTO projects (name, user_id) VALUES (?, ?)", [name, req.session.user.id], function (err) {
-    if (err) return res.status(400).json({ error: err.message });
+  try {
+    db.prepare("INSERT INTO projects (name, user_id) VALUES (?, ?)").run(name, req.session.user.id);
     res.json({ id: this.lastID, name });
-  });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 app.delete('/api/projects/:id', isAuthenticated, (req, res) => {
@@ -231,17 +269,29 @@ app.delete('/api/projects/:id', isAuthenticated, (req, res) => {
 
 app.get('/api/tasks', isAuthenticated, (req, res) => {
   const { project_id } = req.query;
-  let query = "SELECT * FROM tasks WHERE user_id = ?";
-  const params = [req.session.user.id];
-  if (project_id) {
-    query += " AND project_id = ?";
-    params.push(project_id);
+  const userId = req.session.user.id; // Get userId from session
+
+  try {
+    let query = "SELECT * FROM tasks WHERE user_id = ?";
+    const params = [userId];
+
+    if (project_id !== undefined && project_id !== null) { // Check if project_id exists
+      query += " AND project_id = ?";
+      params.push(project_id);
+    }
+
+    // Prepare and execute synchronously
+    const tasks = db.prepare(query).all(params);
+
+    // Send the correct structure
+    res.json({ tasks: tasks });
+
+  } catch (error) {
+    console.error("Error fetching tasks:", error);
+    res.status(500).json({ error: "Failed to retrieve tasks" });
   }
-  db.all(query, params, (err, rows) => {
-    if (err) return res.status(400).json({ error: err.message });
-    res.json({ tasks: rows });
-  });
 });
+
 
 app.post('/api/tasks', isAuthenticated, (req, res) => {
   const { title, posX, posY, completed, project_id } = req.body;
@@ -255,57 +305,90 @@ app.post('/api/tasks', isAuthenticated, (req, res) => {
   );
 });
 
-app.put('/api/tasks', isAuthenticated, (req, res) => {
-  // Update many rows of table
-});
-
 app.put('/api/tasks/:id', isAuthenticated, (req, res) => {
   const { title, posX, posY, completed, color, project_id } = req.body;
-  db.run(
-    "UPDATE tasks SET title = ?, posX = ?, posY = ?, completed = ?, color = ?, project_id = ? WHERE id = ? AND user_id = ?",
-    [title, posX, posY, completed, color, project_id, req.params.id, req.session.user.id],
-    function (err) {
-      if (err) return res.status(400).json({ error: err.message });
-      res.json({ changes: this.changes });
-    }
-  );
+  try {
+    const stmt = db.prepare(`
+      UPDATE tasks
+      SET title      = ?,
+          posX       = ?,
+          posY       = ?,
+          completed  = ?,
+          color      = ?,
+          project_id = ?
+      WHERE id = ? AND user_id = ?
+    `);
+    const result = stmt.run(
+      title,
+      posX,
+      posY,
+      completed,
+      color,
+      project_id,
+      req.params.id,
+      req.session.user.id
+    );
+    res.json({ changes: result.changes });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // When deleting a task, first delete its dependencies.
 app.delete('/api/tasks/:id', isAuthenticated, (req, res) => {
-  db.serialize(() => {
-    db.run(
-      "DELETE FROM dependencies WHERE (from_task = ? OR to_task = ?) AND user_id = ?",
-      [req.params.id, req.params.id, req.session.user.id],
-      function (err) {
-        if (err) return res.status(400).json({ error: err.message });
-        db.run(
-          "DELETE FROM tasks WHERE id = ? AND user_id = ?",
-          [req.params.id, req.session.user.id],
-          function (err2) {
-            if (err2) return res.status(400).json({ error: err2.message });
-            res.json({ changes: this.changes });
-          }
-        );
-      }
-    );
+  const taskId = req.params.id;
+  const userId = req.session.user.id;
+
+  // wrap both operations in a transaction
+  const deleteTaskAndDeps = db.transaction((taskId, userId) => {
+    // 1) delete any dependencies involving this task
+    db.prepare(`
+      DELETE FROM dependencies
+      WHERE (from_task = ? OR to_task = ?)
+        AND user_id = ?
+    `).run(taskId, taskId, userId);
+
+    // 2) delete the task itself
+    return db.prepare(`
+      DELETE FROM tasks
+      WHERE id = ? AND user_id = ?
+    `).run(taskId, userId);
   });
+
+  try {
+    const result = deleteTaskAndDeps(taskId, userId);
+    // result.changes is how many tasks rows were deleted
+    res.json({ changes: result.changes });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // --- DEPENDENCY ENDPOINTS (Authenticated) ---
 
 app.get('/api/dependencies', isAuthenticated, (req, res) => {
   const { project_id } = req.query;
-  let query = "SELECT * FROM dependencies WHERE user_id = ?";
-  const params = [req.session.user.id];
-  if (project_id) {
-    query += " AND project_id = ?";
-    params.push(project_id);
+  const userId = req.session.user.id; // Get userId from session
+
+  try {
+    let query = "SELECT * FROM dependencies WHERE user_id = ?";
+    const params = [userId];
+
+    if (project_id !== undefined && project_id !== null) { // Check if project_id exists
+      query += " AND project_id = ?";
+      params.push(project_id);
+    }
+
+    // Prepare and execute synchronously
+    const dependencies = db.prepare(query).all(params);
+
+    // Send the correct structure
+    res.json({ dependencies: dependencies });
+
+  } catch (error) {
+    console.error("Error fetching dependencies:", error);
+    res.status(500).json({ error: "Failed to retrieve dependencies" });
   }
-  db.all(query, params, (err, rows) => {
-    if (err) return res.status(400).json({ error: err.message });
-    res.json({ dependencies: rows });
-  });
 });
 
 app.post('/api/dependencies', isAuthenticated, (req, res) => {
@@ -433,7 +516,7 @@ Please generate an updated project plan based on this user input: '${userInput}'
     });
 
     // Check if the response is valid.
-    
+
 
     const responseText = completion.choices[0].message.content.replace("```json", "").replace("```", "").trim();
 
@@ -491,91 +574,98 @@ function runAsync(sql, params = []) {
   });
 }
 
-// 2) Your new bulk-change handler
 // --- BULK CHANGE ENDPOINT (Authenticated) ---
-app.post('/api/bulk-change', isAuthenticated, async (req, res) => {
+app.post('/api/bulk-change', isAuthenticated, (req, res) => {
   const { project_id, tasks, dependencies } = req.body;
   const userId = req.session.user.id;
   const idMap = {};      // tempId → realId
   const tasksCreated = [];
   const depsCreated = [];
 
-  try {
-    await runAsync("BEGIN TRANSACTION");
-
-    // 3) Insert new tasks one by one, capturing real IDs
+  // create a single transaction that includes everything
+  const bulkChange = db.transaction(() => {
+    // 1) Insert new tasks
     for (let t of tasks.created) {
-      const realId = await runAsync(
-        `INSERT INTO tasks
-           (title,posX,posY,completed,color,project_id,user_id)
-         VALUES (?,?,?,?,?,?,?)`,
-        [t.title, t.posX, t.posY, t.completed, t.color, project_id, userId]
-      );
-      idMap[t.tempId] = realId;
-      tasksCreated.push({ tempId: String(t.tempId), newId: realId });
+      const info = db
+        .prepare(
+          `INSERT INTO tasks
+             (title,posX,posY,completed,color,project_id,user_id)
+           VALUES (?,?,?,?,?,?,?)`
+        )
+        .run(t.title, t.posX, t.posY, t.completed, t.color, project_id, userId);
+
+      idMap[t.tempId] = info.lastInsertRowid;
+      tasksCreated.push({ tempId: String(t.tempId), newId: info.lastInsertRowid });
     }
 
-    // 4) Update existing tasks
+    // 2) Update existing tasks
     for (let t of tasks.updated) {
-      await runAsync(
-        `UPDATE tasks
-            SET title=?,posX=?,posY=?,completed=?,color=?,project_id=?
-          WHERE id=? AND user_id=?`,
-        [t.title, t.posX, t.posY, t.completed, t.color, project_id, t.id, userId]
-      );
+      db
+        .prepare(
+          `UPDATE tasks
+              SET title=?,posX=?,posY=?,completed=?,color=?,project_id=?
+            WHERE id=? AND user_id=?`
+        )
+        .run(t.title, t.posX, t.posY, t.completed, t.color, project_id, t.id, userId);
     }
 
-    // 5) Delete tasks (and cascade-cleanup dependencies)
+    // 3) Delete tasks & their deps
     for (let id of tasks.deleted) {
-      await runAsync(
-        `DELETE FROM dependencies
-           WHERE (from_task=? OR to_task=?) AND user_id=?`,
-        [id, id, userId]
-      );
-      await runAsync(
-        `DELETE FROM tasks WHERE id=? AND user_id=?`,
-        [id, userId]
-      );
+      db
+        .prepare(
+          `DELETE FROM dependencies
+             WHERE (from_task=? OR to_task=?) AND user_id=?`
+        )
+        .run(id, id, userId);
+
+      db
+        .prepare(`DELETE FROM tasks WHERE id=? AND user_id=?`)
+        .run(id, userId);
     }
 
-    // 6) Now insert new dependencies — **using the real task IDs**!
+    // 4) Insert new dependencies
     for (let d of dependencies.created) {
       const from = idMap[d.from_task] || d.from_task;
       const to = idMap[d.to_task] || d.to_task;
-      const newDepId = await runAsync(
-        `INSERT INTO dependencies
-           (from_task,to_task,project_id,user_id)
-         VALUES (?,?,?,?)`,
-        [from, to, project_id, userId]
-      );
-      depsCreated.push({ from_task: from, to_task: to, newId: newDepId });
+      const info = db
+        .prepare(
+          `INSERT INTO dependencies
+             (from_task,to_task,project_id,user_id)
+           VALUES (?,?,?,?)`
+        )
+        .run(from, to, project_id, userId);
+
+      depsCreated.push({ from_task: from, to_task: to, newId: info.lastInsertRowid });
     }
 
-    // 7) Updates & deletes for dependencies
+    // 5) Update dependencies
     for (let d of dependencies.updated) {
-      await runAsync(
-        `UPDATE dependencies
-            SET from_task=?,to_task=?,project_id=?
-          WHERE id=? AND user_id=?`,
-        [d.from_task, d.to_task, project_id, d.id, userId]
-      );
+      db
+        .prepare(
+          `UPDATE dependencies
+              SET from_task=?,to_task=?,project_id=?
+            WHERE id=? AND user_id=?`
+        )
+        .run(d.from_task, d.to_task, project_id, d.id, userId);
     }
+
+    // 6) Delete dependencies
     for (let id of dependencies.deleted) {
-      await runAsync(
-        `DELETE FROM dependencies WHERE id=? AND user_id=?`,
-        [id, userId]
-      );
+      db
+        .prepare(`DELETE FROM dependencies WHERE id=? AND user_id=?`)
+        .run(id, userId);
     }
+  });
 
-    // 8) Commit
-    await runAsync("COMMIT");
+  try {
+    bulkChange();  // runs BEGIN ... COMMIT or auto-ROLLBACK on error
     res.json({ tasksCreated, dependenciesCreated: depsCreated });
-
   } catch (err) {
-    await runAsync("ROLLBACK");
-    console.error("bulk-change failed:", err);
+    console.error('bulk-change failed:', err);
     res.status(500).json({ error: err.message });
   }
 });
+
+
 
 export default app; // Export the app for testing purposes     

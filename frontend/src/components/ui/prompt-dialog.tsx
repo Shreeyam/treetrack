@@ -14,7 +14,8 @@ interface PromptDialogProps {
   description?: string
 }
 
-export function PromptDialog({
+// Wrap the component definition with React.memo
+export const PromptDialog = React.memo(({
   open,
   title,
   defaultValue = "",
@@ -23,7 +24,7 @@ export function PromptDialog({
   onCancel,
   mode = 'prompt',
   description
-}: PromptDialogProps) {
+}: PromptDialogProps) => {
   const [value, setValue] = React.useState(defaultValue)
   const inputRef = React.useRef<HTMLInputElement>(null)
 
@@ -75,4 +76,7 @@ export function PromptDialog({
       </DialogContent>
     </Dialog>
   )
-}
+});
+
+// Add a display name for better debugging
+PromptDialog.displayName = 'PromptDialog';

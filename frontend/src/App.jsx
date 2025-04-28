@@ -44,7 +44,6 @@ function App({user, setUser}) {
     const [backgroundOn, setBackgroundOn] = useState(() => localStorage.getItem('backgroundOn') !== 'false');
     const [snapToGridOn, setSnapToGridOn] = useState(() => localStorage.getItem('snapToGridOn') !== 'false');
     const [showUpDownstream, setShowUpDownstream] = useState(() => localStorage.getItem('showUpDownstream') !== 'false');
-    const [selectedNodes, setSelectedNodes] = useState([]);
     const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, node: null });
     const [generativeMode, setGenerativeMode] = useState(false);
     const [lastNodePosition, setLastNodePosition] = useState(null); // Initialize to null
@@ -191,6 +190,10 @@ function App({user, setUser}) {
         setCreateProjectDialog(false);
     }, []);
 
+    const handleCancelCreateProject = useCallback(() => {
+        setCreateProjectDialog(false);
+    }, []);
+
     const handleDeleteProject = useCallback(() => {
         setDeleteProjectDialog(true);
     }, []);
@@ -205,6 +208,10 @@ function App({user, setUser}) {
             .catch(err => console.error(err));
         setDeleteProjectDialog(false);
     }, [currentProject]);
+
+    const handleCancelDeleteProject = useCallback(() => {
+        setDeleteProjectDialog(false);
+    }, []);
 
     // --- Node Management ---
     const createNodeStyle = useCallback((color, completed, selected, draft) => {
@@ -452,6 +459,11 @@ function App({user, setUser}) {
         setNodeToEdit(null);
     }, [nodeToEdit, currentProject]);
 
+    const handleCancelEdit = useCallback(() => {
+        setEditDialogOpen(false);
+        setNodeToEdit(null);
+    }, []);
+
     const handleDeleteNode = useCallback((node) => {
         deleteTask(node.id);
         setNodes(prev => prev.filter(n => n.id !== node.id));
@@ -482,6 +494,11 @@ function App({user, setUser}) {
         setDeleteSubtreeDialog(false);
         setNodeToDeleteSubtree(null);
     }, [nodeToDeleteSubtree, edges]);
+
+    const handleCancelDeleteSubtree = useCallback(() => {
+        setDeleteSubtreeDialog(false);
+        setNodeToDeleteSubtree(null);
+    }, []);
 
     const handleGenerativeEdit = useCallback((data) => {
         // --- Capture previous state BEFORE applying changes ---
@@ -881,16 +898,20 @@ function App({user, setUser}) {
     }, [edges, hideCompleted, visibleNodeIds]);
 
     const renderedNodes = useMemo(() => {
+        // Derive selected nodes directly from the nodes state
+        const currentSelectedNodes = nodes.filter(n => n.selected);
+
         return mapWithChangeDetection(visibleNodes, node => {
             // compute the one‑off style override
             let nextStyle = node.style;
 
             // Track downstream and upstream nodes of the selected node
-            const isDownstream = selectedNodes.length === 1 && edges.some(e => 
-                e.source === selectedNodes[0].id && e.target === node.id
+            // Use the derived currentSelectedNodes list
+            const isDownstream = currentSelectedNodes.length === 1 && edges.some(e => 
+                e.source === currentSelectedNodes[0].id && e.target === node.id
             );
-            const isUpstream = selectedNodes.length === 1 && edges.some(e => 
-                e.target === selectedNodes[0].id && e.source === node.id
+            const isUpstream = currentSelectedNodes.length === 1 && edges.some(e => 
+                e.target === currentSelectedNodes[0].id && e.source === node.id
             );
 
             if (
@@ -920,14 +941,14 @@ function App({user, setUser}) {
                 : { ...node, style: nextStyle };
         });
     }, [
-        visibleNodes,
+        visibleNodes, // depends on nodes
         unlinkHighlight,
         selectedSource,
         highlightNext,
-        nextTaskIds,
+        nextTaskIds, // depends on nodes
         edges,
-        selectedNodes,
-        showUpDownstream
+        showUpDownstream,
+        nodes // Add dependency as we derive selected nodes from it
     ]);
 
     const handleNodeContextMenu = useCallback((event, node) => {
@@ -945,13 +966,16 @@ function App({user, setUser}) {
         setContextMenu({ visible: false, x: 0, y: 0, node: null });
     }, []);
 
-    const handleSelectionChange = useCallback(({ nodes }) => {
-        setSelectedNodes(nodes || []);
-    }, []);
-
     const handleCloseContextMenu = useCallback(() => {
         setContextMenu({ visible: false, x: 0, y: 0, node: null });
     }, []);
+
+    const onFitView = useCallback(() => {
+        if (reactFlowInstance) {
+            reactFlowInstance.fitView();
+        }
+    }
+    , [reactFlowInstance]);
 
     if (!user) {
         return <MemoAuthForm onLogin={setUser} />;
@@ -976,7 +1000,7 @@ function App({user, setUser}) {
                 showUpDownstream={showUpDownstream}
                 setShowUpDownstream={setShowUpDownstream}
                 onAutoArrange={handleAutoArrange}
-                onFitView={() => reactFlowInstance?.fitView()}
+                onFitView={onFitView}
                 currentProject={currentProject}
                 projects={projects}
                 onProjectChange={setCurrentProject}
@@ -994,11 +1018,10 @@ function App({user, setUser}) {
                     edges={visibleEdges}
                     onNodesChange={onNodesChange}
                     onConnect={onConnect}
-                    onNodeClick={handleNodeClick}
+                    onNodeMouseDown={handleNodeClick}
                     onNodeContextMenu={handleNodeContextMenu}
                     onNodeDragStop={onNodeDragStop}
                     onPaneClick={handlePaneClick}
-                    onSelectionChange={handleSelectionChange}
                     contextMenu={contextMenu}
                     onToggleCompleted={handleToggleCompleted}
                     onEditNode={handleEditNode}
@@ -1020,10 +1043,7 @@ function App({user, setUser}) {
                 defaultValue={nodeToEdit?.data.label || ""}
                 placeholder="Enter task title"
                 onSubmit={handleEditSubmit}
-                onCancel={() => {
-                    setEditDialogOpen(false);
-                    setNodeToEdit(null);
-                }}
+                onCancel={handleCancelEdit}
             />
             <PromptDialog
                 open={deleteProjectDialog}
@@ -1031,7 +1051,7 @@ function App({user, setUser}) {
                 description="Are you sure you want to delete this project? All data will be lost."
                 mode="confirm"
                 onSubmit={handleConfirmDeleteProject}
-                onCancel={() => setDeleteProjectDialog(false)}
+                onCancel={handleCancelDeleteProject}
             />
             <PromptDialog
                 open={deleteSubtreeDialog}
@@ -1039,17 +1059,14 @@ function App({user, setUser}) {
                 description="Are you sure you want to delete this task and all its dependencies? This action cannot be undone."
                 mode="confirm"
                 onSubmit={handleConfirmDeleteSubtree}
-                onCancel={() => {
-                    setDeleteSubtreeDialog(false);
-                    setNodeToDeleteSubtree(null);
-                }}
+                onCancel={handleCancelDeleteSubtree}
             />
             <PromptDialog
                 open={createProjectDialog}
                 title="Create New Project"
                 placeholder="Enter project name"
                 onSubmit={handleConfirmCreateProject}
-                onCancel={() => setCreateProjectDialog(false)}
+                onCancel={handleCancelCreateProject}
             />
         </div>
     );

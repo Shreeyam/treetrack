@@ -1,14 +1,17 @@
 // server.js
-const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
-const cors = require('cors');
-const session = require('express-session');
-const SQLiteStore = require('connect-sqlite3')(session);
-const bcrypt = require('bcrypt');
-const rateLimit = require('express-rate-limit');
-const crypto = require('crypto');
-const OpenAI = require("openai");
-require('dotenv').config();
+import express from 'express';
+import sqlite3pkg from 'sqlite3';
+const sqlite3 = sqlite3pkg.verbose();
+import cors from 'cors';
+import session from 'express-session';
+import connectSqlite3 from 'connect-sqlite3';
+import bcrypt from 'bcrypt';
+import rateLimit from 'express-rate-limit';
+import crypto from 'crypto';
+import OpenAI from 'openai';
+import 'dotenv/config';
+
+const SQLiteStore = connectSqlite3(session);
 
 // const openai = new OpenAI();
 const openai = new OpenAI({
@@ -429,10 +432,13 @@ Please generate an updated project plan based on this user input: '${userInput}'
       temperature: 0.7,
     });
 
+    // Check if the response is valid.
+    
+
     const responseText = completion.choices[0].message.content.replace("```json", "").replace("```", "").trim();
 
     // Post-process the response to affix project, user id
-    responseTasks = JSON.parse(responseText);
+    let responseTasks = JSON.parse(responseText);
 
     responseTasks.tasks.forEach(task => {
       task.project_id = projectId;
@@ -572,8 +578,4 @@ app.post('/api/bulk-change', isAuthenticated, async (req, res) => {
   }
 });
 
-
-// --- Start the server ---
-app.listen(port, () => {
-  console.log(`Server listening on port ${port}`);
-});
+export default app; // Export the app for testing purposes     

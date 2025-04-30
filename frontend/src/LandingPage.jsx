@@ -16,6 +16,7 @@ import { Navbar } from "@/components/navigation/Navbar";
 
 import "@/globals.css";
 import bgVideoMp4 from "@/assets/background_optimized.mp4";
+import Roadmap from "./components/landing/Roadmap";
 
 export default function TreetrackLanding() {
     return (
@@ -108,7 +109,7 @@ export default function TreetrackLanding() {
                     </div>
 
                     <div className="relative overflow-hidden rounded-lg aspect-video flex order-last items-center justify-center lg:order-first">
-                        <Bot className="h-16 w-16 text-muted-foreground"/>
+                        <Bot className="h-16 w-16 text-muted-foreground" />
                     </div>
                 </div>
             </section>
@@ -162,6 +163,7 @@ export default function TreetrackLanding() {
                 </div>
             </section>
 
+            <Roadmap />
             {/* CTA Section */}
             <section className="w-full py-8 md:py-16 bg-primary text-primary-foreground">
                 <div className="container mx-auto px-4 md:px-6">
@@ -184,6 +186,7 @@ export default function TreetrackLanding() {
                     </div>
                 </div>
             </section>
+
 
             {/* Footer */}
             <Footer />

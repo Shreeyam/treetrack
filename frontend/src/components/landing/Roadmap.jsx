@@ -1,4 +1,4 @@
-import { ArrowRight, Sparkles, Rocket, Brain, Smartphone, Calendar } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function Roadmap() {
@@ -30,20 +30,24 @@ export default function Roadmap() {
                     </h2>
                 </div>
 
-                <div className="relative mt-4">
-                    {/* Timeline line */}
-                    <div className="absolute top-1 left-4 right-4 h-1 bg-gray-200  rounded-full"></div>
+                <div className="relative">
+                    {/* Vertical line on mobile */}
+                    <div className="absolute left-5 top-0 bottom-0 w-1 bg-gray-200 rounded-full md:hidden" />
+                    {/* Horizontal line on desktop */}
+                    <div className="hidden md:block absolute top-1 left-4 right-4 h-1 bg-gray-200 rounded-full" />
 
                     {/* Timeline items */}
-                    <div className="flex justify-between relative">
+                    <div className="space-y-8 md:flex md:justify-between md:space-y-0">
                         {roadmapItems.map((item, index) => (
                             <div
                                 key={index}
-                                className="flex-shrink-0 w-56 flex flex-col items-center text-center"
+                                className="relative flex items-start w-full pl-10 md:flex-col md:items-center md:w-56 md:pl-0"
                             >
-                                <span className="h-3 w-3 bg-primary rounded-full" />
-                                <h3 className="mt-2 font-semibold">{item.time}</h3>
-                                <p className="mt-1 text-muted-foreground">{item.label}</p>
+                                <span className="absolute left-4 top-0 md:static md:left-auto md:top-auto md:mb-2 h-3 w-3 bg-primary rounded-full" />
+                                <div className="md:text-center">
+                                    <h3 className="mt-0 font-semibold">{item.time}</h3>
+                                    <p className="mt-1 text-muted-foreground">{item.label}</p>
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -51,15 +55,16 @@ export default function Roadmap() {
 
                 {/* Discord join button */}
                 <div className="flex justify-center mt-4">
-                    <Button variant='outline'>
+                    <Button variant="outline">
                         <a
                             href="https://discord.gg/mRTRqjhAXX"
                             target="_blank"
                             rel="noopener noreferrer"
+                            className="flex items-center"
                         >
                             Suggest ideas on Discord
+                            <ArrowRight className="h-4 w-4 ml-2" />
                         </a>
-                        <ArrowRight className="h-4 w-4" />
                     </Button>
                 </div>
             </div>

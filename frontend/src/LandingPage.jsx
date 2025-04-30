@@ -1,7 +1,6 @@
 import React from "react";
 import {
     ArrowRight,
-    PlayCircle,
     Network,
     Clock,
     Sparkle,
@@ -14,9 +13,11 @@ import { ReactTyped } from "react-typed";
 import { Footer } from "@/components/navigation/Footer";
 import { Navbar } from "@/components/navigation/Navbar";
 
+
 import "@/globals.css";
 import bgVideoMp4 from "@/assets/background_optimized.mp4";
-import Roadmap from "./components/landing/Roadmap";
+import Roadmap from "@/components/landing/Roadmap";
+import FAQ from "@/components/landing/FAQ";
 
 export default function TreetrackLanding() {
     return (
@@ -164,6 +165,7 @@ export default function TreetrackLanding() {
             </section>
 
             <Roadmap />
+            <FAQ/>
             {/* CTA Section */}
             <section className="w-full py-8 md:py-16 bg-primary text-primary-foreground">
                 <div className="container mx-auto px-4 md:px-6">

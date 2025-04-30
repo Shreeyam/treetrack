@@ -12,10 +12,9 @@ export function Navbar() {
                     Research Preview
                 </div>
                 <div className="ml-2 gap-4 md:flex hidden">
-                    {/* <a href="#features" className="text-sm font-medium hover:underline underline-offset-4">Features</a> */}
-                    {/* <a href="#demo" className="text-sm font-medium hover:underline underline-offset-4">Demo</a> */}
-                    {/* <a href="#pricing" className="text-sm font-medium hover:underline underline-offset-4">Pricing</a> */}
                     <a href="/about" className="text-sm font-medium hover:underline underline-offset-4">About</a>
+                    <a href="/#roadmap" className="text-sm font-medium hover:underline underline-offset-4">Roadmap</a>
+                    <a href="/#faq" className="text-sm font-medium hover:underline underline-offset-4">FAQ</a>
                 </div>
             </div>
             <div className="flex items-center gap-4">

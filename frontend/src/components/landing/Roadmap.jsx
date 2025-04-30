@@ -22,7 +22,7 @@ export default function Roadmap() {
     ];
 
     return (
-        <section className="w-full py-8 bg-muted/50">
+        <section id="roadmap" className="w-full py-8 bg-muted/50">
             <div className="container mx-auto px-4 md:px-6">
                 <div className="text-center max-w-3xl mx-auto mb-12">
                     <h2 className="text-2xl font-bold tracking-tighter md:text-3xl">

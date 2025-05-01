@@ -10,7 +10,7 @@ export default function FAQ() {
     const faqs = [
         {
             "question": "What exactly is Treetrack?",
-            "answer": "Treetrack is a project-management app that models every task as a node inside a tree structured. Dependencies are explicit, so you always know what must happen next and what’s blocking the critical path."
+            "answer": "Treetrack is a project-management app that models every task as a node inside a tree structure. Dependencies are explicit, so you always know what must happen next and what’s blocking the critical path."
         },
         {
             "question": "How is it different from JIRA, ClickUp, or Trello?",

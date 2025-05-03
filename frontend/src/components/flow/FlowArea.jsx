@@ -49,13 +49,14 @@ const FlowArea = memo(({
 
     const handlePaneContextMenu = useCallback((event) => {
         event.preventDefault();
+        onCloseContextMenu(); // Close the task context menu first
         const bounds = event.target.getBoundingClientRect();
         setCanvasMenu({ 
             visible: true, 
             x: event.clientX - bounds.left,
             y: event.clientY - bounds.top
         });
-    }, []);
+    }, [onCloseContextMenu]);
 
     const handleCloseCanvasMenu = useCallback(() => {
         setCanvasMenu({ visible: false, x: 0, y: 0 });
@@ -73,6 +74,11 @@ const FlowArea = memo(({
         handleCloseCanvasMenu();
     }, [onPaneClick]);
 
+    const handleNodeContextMenu = useCallback((event, node) => {
+        handleCloseCanvasMenu(); // Close the canvas context menu first
+        onNodeContextMenu(event, node); // Then call the original handler
+    }, [handleCloseCanvasMenu, onNodeContextMenu]);
+
     return (
         <div className="flex-grow relative">
             <ReactFlow
@@ -81,7 +87,7 @@ const FlowArea = memo(({
                 onNodesChange={onNodesChange}
                 onConnect={onConnect}
                 onNodeClick={onNodeClick}
-                onNodeContextMenu={onNodeContextMenu}
+                onNodeContextMenu={handleNodeContextMenu}
                 onNodeDragStop={onNodeDragStop}
                 onSelectionChange={onSelectionChange}
                 elementsSelectable={true}

@@ -115,10 +115,10 @@ function isAuthenticated(req, res, next) {
 // Middleware to check if the user is a premium user.
 function isPremium(req, res, next) {
   if (req.session && req.session.user && req.session.user.premium) {
-  return next();
+    return next();
   }
-return res.status(403).json({ error: "Premium access required" });
-  }
+  return res.status(403).json({ error: "Premium access required" });
+}
 
 // Rate limiter for the login endpoint.
 const loginLimiter = rateLimit({

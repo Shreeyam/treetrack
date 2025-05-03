@@ -940,9 +940,9 @@ function App({user, setUser}) {
                     outline: '2px solid green',
                 };
             } else if (showUpDownstream && isDownstream) {
-                nextStyle = { ...nextStyle, outline: '2px solid #FFD700' }; // Yellow for downstream
+                nextStyle = { ...nextStyle, outline: '2px solid #FFD700', boxShadow: '0 0 10px 1px #FFD700' }; // Yellow for downstream + glow
             } else if (showUpDownstream && isUpstream) {
-                nextStyle = { ...nextStyle, outline: '2px solid #9370DB' }; // Purple for upstream
+                nextStyle = { ...nextStyle, outline: '2px solid #9370DB', boxShadow: '0 0 10px 1px #9370DB' }; // Purple for upstream + glow
             } else if (highlightNext) {
                 nextStyle = nextTaskIds.has(node.id)
                     ? { ...nextStyle, opacity: 1 }

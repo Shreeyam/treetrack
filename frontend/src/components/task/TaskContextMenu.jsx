@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
     Pencil,
@@ -6,7 +6,8 @@ import {
     Network,
     DropletOff,
     X,
-    Check
+    Check,
+    Palette // Import Palette icon
 } from 'lucide-react';
 
 const TaskContextMenu = memo(({
@@ -21,7 +22,20 @@ const TaskContextMenu = memo(({
     onUpdateColor,
     onClose
 }) => {
+    const colorInputRef = useRef(null); // Add ref for color input
+
     if (!visible) return null;
+
+    // Handler to trigger click on hidden color input
+    const handleColorPickerClick = () => {
+        colorInputRef.current?.click();
+    };
+
+    // Handler for when a color is selected from the picker
+    const handleColorChange = (event) => {
+        onUpdateColor(node, event.target.value);
+        onClose();
+    };
 
     return (
         <div
@@ -75,26 +89,49 @@ const TaskContextMenu = memo(({
                     <Network size={16} />
                     <span>Delete Subtree</span>
                 </li>
+                {/* Modified color selection list item */}
                 <li className="p-2">
-                    <div className="flex space-x-1 mb-2">
-                        {['#ffcccc', '#fce5cd', '#fff2cc', '#d9ead3', '#d2e1f3'].map((color) => (
+                    <div className="flex space-x-1 mb-2 items-center"> {/* Added items-center for vertical alignment */}
+                        {/* Removed orange (#fce5cd), kept red, yellow, green, blue */}
+                        {['#ffcccc', '#fff2cc', '#d9ead3', '#d2e1f3'].map((color) => (
                             <div
                                 key={color}
                                 onClick={() => {
                                     onUpdateColor(node, color);
                                     onClose();
                                 }}
-                                className="w-full aspect-square rounded cursor-pointer border"
+                                // Removed w-full, added fixed size w-6 h-6
+                                className="w-6 h-6 rounded cursor-pointer border"
                                 style={{ backgroundColor: color }}
                                 title={color}
                             />
                         ))}
+                        {/* Color Picker Button */}
+                        <Button
+                            variant="outline"
+                            size="icon" // Use icon size for square button
+                            // Removed w-full, added fixed size w-6 h-6 to match color squares
+                            className="w-6 h-6 rounded cursor-pointer border flex items-center justify-center"
+                            onClick={handleColorPickerClick}
+                            title="Choose color"
+                        >
+                            <Palette size={16} />
+                        </Button>
+                        {/* Hidden Color Input - Ensure self-closing */}
+                        <input
+                            type="color"
+                            ref={colorInputRef}
+                            onChange={handleColorChange}
+                            style={{ visibility: 'hidden', position: 'absolute', width: 0, height: 0 }} // Keep it hidden
+                        />
                     </div>
+                    {/* Reset Color Button */}
                     <Button size="sm" className="w-full" variant="outline" onClick={() => {
-                        onUpdateColor(node, '#FFFFFF');
+                        onUpdateColor(node, '#FFFFFF'); // Assuming #FFFFFF is the reset/default color
                         onClose();
                     }}>
-                        <DropletOff /> Reset Color
+                        <DropletOff size={16} className="mr-1" />
+                         Reset Color
                     </Button>
                 </li>
             </ul>

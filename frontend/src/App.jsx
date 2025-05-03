@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ReactFlowProvider, applyNodeChanges, addEdge } from '@xyflow/react';
+import { ReactFlowProvider, applyNodeChanges, addEdge, applyEdgeChanges } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import '@/globals.css';
 import "@/App.css";
@@ -322,6 +322,20 @@ function App({user, setUser}) {
     );
 
     // --- Edge Management ---
+    const onEdgesChange = useCallback(
+        (changes) => {
+            setEdges((prevEdges) => applyEdgeChanges(changes, prevEdges));
+
+            // Handle edge deletion from the context menu
+            changes.forEach(change => {
+                if (change.type === 'remove') {
+                    deleteDependency(change.id);
+                }
+            });
+        },
+        [] // No dependencies needed as deleteDependency is stable
+    );
+
     const onConnect = useCallback(
         (params) => {
             const tempEdgeId = `e${params.source}-${params.target}`;
@@ -1017,6 +1031,7 @@ function App({user, setUser}) {
                     nodes={renderedNodes}
                     edges={visibleEdges}
                     onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
                     onNodeMouseDown={handleNodeClick}
                     onNodeContextMenu={handleNodeContextMenu}

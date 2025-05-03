@@ -1,21 +1,21 @@
-import React, { memo, useCallback, useRef } from 'react';
+import React, { memo, useCallback, useRef, useState } from 'react';
 import {
     ReactFlow,
     Background,
     Controls,
     MiniMap,
-    applyNodeChanges,
-    addEdge,
     useReactFlow
 } from '@xyflow/react';
 import TaskContextMenu from '../task/TaskContextMenu';
 import CanvasContextMenu from './CanvasContextMenu';
+import ArrowContextMenu from './ArrowContextMenu';
 import { nodeStyles } from './styles';
 
 const FlowArea = memo(({
     nodes,
     edges,
     onNodesChange,
+    onEdgesChange,
     onConnect,
     onNodeClick,
     onNodeContextMenu,
@@ -36,9 +36,11 @@ const FlowArea = memo(({
     onAddNode,
     onAutoArrange
 }) => {
-    const [canvasMenu, setCanvasMenu] = React.useState({ visible: false, x: 0, y: 0 });
+    const [canvasMenu, setCanvasMenu] = useState({ visible: false, x: 0, y: 0 });
+    const [arrowMenu, setArrowMenu] = useState({ visible: false, x: 0, y: 0, edge: null });
     const { zoomIn, zoomOut, fitView } = useReactFlow();
-    const [reactFlowInstance, setReactFlowInstance] = React.useState(null);
+    const [reactFlowInstance, setReactFlowInstance] = useState(null);
+    const flowRef = useRef(null);
 
     const handleInit = useCallback((instance) => {
         setReactFlowInstance(instance);
@@ -47,16 +49,21 @@ const FlowArea = memo(({
         }
     }, [onInit]);
 
+    const handleCloseArrowMenu = useCallback(() => {
+        setArrowMenu({ visible: false, x: 0, y: 0, edge: null });
+    }, []);
+
     const handlePaneContextMenu = useCallback((event) => {
         event.preventDefault();
-        onCloseContextMenu(); // Close the task context menu first
-        const bounds = event.target.getBoundingClientRect();
+        onCloseContextMenu();
+        handleCloseArrowMenu();
+        const bounds = flowRef.current.getBoundingClientRect();
         setCanvasMenu({ 
             visible: true, 
             x: event.clientX - bounds.left,
             y: event.clientY - bounds.top
         });
-    }, [onCloseContextMenu]);
+    }, [onCloseContextMenu, handleCloseArrowMenu]);
 
     const handleCloseCanvasMenu = useCallback(() => {
         setCanvasMenu({ visible: false, x: 0, y: 0 });
@@ -72,22 +79,46 @@ const FlowArea = memo(({
     const handlePaneClick = useCallback((event) => {
         onPaneClick(event);
         handleCloseCanvasMenu();
-    }, [onPaneClick]);
+        handleCloseArrowMenu();
+    }, [onPaneClick, handleCloseCanvasMenu, handleCloseArrowMenu]);
 
     const handleNodeContextMenu = useCallback((event, node) => {
-        handleCloseCanvasMenu(); // Close the canvas context menu first
-        onNodeContextMenu(event, node); // Then call the original handler
-    }, [handleCloseCanvasMenu, onNodeContextMenu]);
+        handleCloseCanvasMenu();
+        handleCloseArrowMenu();
+        onNodeContextMenu(event, node);
+    }, [handleCloseCanvasMenu, handleCloseArrowMenu, onNodeContextMenu]);
+
+    const handleEdgeContextMenu = useCallback((event, edge) => {
+        event.preventDefault();
+        onCloseContextMenu();
+        handleCloseCanvasMenu();
+        const bounds = flowRef.current.getBoundingClientRect();
+        setArrowMenu({
+            visible: true,
+            x: event.clientX - bounds.left,
+            y: event.clientY - bounds.top,
+            edge: edge,
+        });
+    }, [onCloseContextMenu, handleCloseCanvasMenu]);
+
+    const handleDeleteEdge = useCallback((edgeToDelete) => {
+        if (onEdgesChange) {
+            onEdgesChange([{ type: 'remove', id: edgeToDelete.id }]);
+        }
+        handleCloseArrowMenu();
+    }, [onEdgesChange, handleCloseArrowMenu]);
 
     return (
-        <div className="flex-grow relative">
+        <div className="flex-grow relative" ref={flowRef}>
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
                 onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
                 onNodeClick={onNodeClick}
                 onNodeContextMenu={handleNodeContextMenu}
+                onEdgeContextMenu={handleEdgeContextMenu}
                 onNodeDragStop={onNodeDragStop}
                 onSelectionChange={onSelectionChange}
                 elementsSelectable={true}
@@ -95,7 +126,7 @@ const FlowArea = memo(({
                 selectNodesOnDrag={true}
                 multiSelectionKeyCode="Shift"
                 onPaneClick={handlePaneClick}
-                onContextMenu={handlePaneContextMenu}
+                onPaneContextMenu={handlePaneContextMenu}
                 onInit={handleInit}
                 snapToGrid={snapToGridOn}
                 snapGrid={[10, 10]}
@@ -139,6 +170,15 @@ const FlowArea = memo(({
                 onFitView={fitView}
                 onAutoArrange={onAutoArrange}
                 onClose={handleCloseCanvasMenu}
+            />
+
+            <ArrowContextMenu
+                visible={arrowMenu.visible}
+                x={arrowMenu.x}
+                y={arrowMenu.y}
+                edge={arrowMenu.edge}
+                onDelete={handleDeleteEdge}
+                onClose={handleCloseArrowMenu}
             />
         </div>
     );

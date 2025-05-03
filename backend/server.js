@@ -382,7 +382,7 @@ async function generativeEdit(userInput, projectId, userId, currentState) {
   // Build the system prompt with the JSON schema embedded.
   const systemPrompt = `You are a project planning assistant responsible for generating or editing a complete and logically structured plan to accomplish a high-level goal. The output must be a JSON object containing two parts: an array of 'tasks' and an array of 'dependencies' between them. The input contains the current project state (if provided) in the same structure as the output.
 
-**IMPORTANT:** If the user's request does not require *any* changes to the tasks or dependencies (e.g., it's just a greeting or a question not related to modifying the plan), return the following specific JSON structure:
+**IMPORTANT:** If the user's request does not require *any* changes to the tasks or dependencies (e.g., it's just a greeting or a question not related to modifying the plan), respond normally and helpfully, and return the following specific JSON structure:
 \`\`\`json
 {
   "tasks": [],

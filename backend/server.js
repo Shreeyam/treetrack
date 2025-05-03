@@ -345,9 +345,10 @@ async function generativeEdit(userInput, projectId, userId, currentState) {
           "user_id": {"type": "integer"},
           "color": {"type": "string"},
           "locked": {"type": "integer"},
-          "draft": {"type": "integer"}
+          "draft": {"type": "integer"},
+          "delete": {"type": "integer"},
+          "no_change": {"type": "boolean"} // Only for tasks
         },
-        "required": ["id", "title", "posX", "posY", "completed", "project_id", "user_id", "color", "locked"],
         "additionalProperties": false
       }
     },
@@ -360,14 +361,18 @@ async function generativeEdit(userInput, projectId, userId, currentState) {
           "from_task": {"type": "integer"},
           "to_task": {"type": "integer"},
           "project_id": {"type": "integer"},
-          "user_id": {"type": "integer"}
+          "user_id": {"type": "integer"},
+          "delete": {"type": "integer"}
         },
-        "required": ["id", "from_task", "to_task", "project_id", "user_id"],
+        "required": ["id", "from_task", "to_task"],
         "additionalProperties": false
       }
     },
     "summary": {
       "type": "string"
+    },
+    "no_changes_required": { // Added optional flag
+      "type": "boolean"
     }
   },
   "required": ["tasks", "dependencies", "summary"],
@@ -376,6 +381,17 @@ async function generativeEdit(userInput, projectId, userId, currentState) {
 
   // Build the system prompt with the JSON schema embedded.
   const systemPrompt = `You are a project planning assistant responsible for generating or editing a complete and logically structured plan to accomplish a high-level goal. The output must be a JSON object containing two parts: an array of 'tasks' and an array of 'dependencies' between them. The input contains the current project state (if provided) in the same structure as the output.
+
+**IMPORTANT:** If the user's request does not require *any* changes to the tasks or dependencies (e.g., it's just a greeting or a question not related to modifying the plan), return the following specific JSON structure:
+\`\`\`json
+{
+  "tasks": [],
+  "dependencies": [],
+  "summary": "Your conversational response here.",
+  "no_changes_required": true
+}
+\`\`\`
+**Otherwise**, if changes *are* needed, follow the instructions below and **do not** include the 'no_changes_required' flag.
 
 Each task represents a specific, actionable step required to complete the overall goal. The tasks must form a directed acyclic graph (DAG) — some tasks should occur in strict sequence (e.g., A must be done before B), while others can occur in parallel or have no dependency between them.
 
@@ -389,30 +405,33 @@ Consider the real-world logical flow of a project: planning, preparation, execut
 
 Each task object must include:
 - id (integer, negative number if a new task or re-use from the input otherwise)
-- title (short, descriptive name)
-- posX and posY (default to 0)
-- completed (set to 0)
-- project_id and user_id (placeholders that will be filled in later)
-- color (use a HEX color code to reflect the stage or layer of the task, e.g., planning vs execution; you should use '#ffcccc', '#fff2cc', '#d9ead3', or '#d2e1f3' first. If you need more than 4 categories you can create more colors; they should be pastel-ish as they will be the background for black text)
-- locked (set to 0)
-- draft (set to 1)
-- delete (set to 1 if you want to delete the task, 0 otherwise)
+- **If the task is unchanged from the input state, include ONLY the 'id' and set 'no_change' to true.**
+- **Otherwise (for new or modified tasks), include:**
+  - title (short, descriptive name)
+  - posX and posY (default to 0, or adjust for readability left-to-right)
+  - completed (set to 0)
+  - project_id and user_id (placeholders that will be filled in later)
+  - color (use a HEX color code to reflect the stage or layer of the task, e.g., planning vs execution; you should use '#ffcccc', '#fff2cc', '#d9ead3', or '#d2e1f3' first. If you need more than 4 categories you can create more colors; they should be pastel-ish as they will be the background for black text)
+  - locked (set to 0)
+  - draft (set to 1)
+  - delete (set to 1 if you want to delete the task, 0 otherwise)
+  - no_change (set to false or omit)
 
-Each dependency object must include:
-- id (integer)
+Each dependency object represents a link between two tasks. **Only include dependencies that are NEW or MODIFIED or being DELETED.** Omit dependencies that are unchanged from the input.
+Each included dependency object must include:
+- id (integer, negative if new, re-use from input otherwise)
 - from_task (source task id)
 - to_task (destination task id)
-- project_id and user_id (same placeholders)
+- project_id and user_id (placeholders that will be filled in later)
 - delete (set to 1 if you want to delete the dependency, 0 otherwise)
 
 The summary should be a short description of your generated or edited tasks and dependencies. Two sentences, maximum.
 
-Ensure that the output adheres strictly to the following JSON schema:
+Ensure that the output adheres strictly to the following JSON schema (unless the 'no_changes_required' case applies):
 ${jsonSchema}
 
-Be thoughtful and detailed. The goal is to create a structured blueprint of the steps needed to achieve the goal, with realistic precedence and parallelization. Output only the JSON structure for the tasks and dependencies, adhering strictly to the schema provided. If you are editing existing nodes, only include the ones you have edited in the output. Remember to place them so that the graph is readable by adjusting x and y positions, readable left to right. If you want to delete a node or dependency, set the delete flag to 1.`;
+Be thoughtful and detailed. The goal is to create a structured blueprint of the steps needed to achieve the goal, with realistic precedence and parallelization. Output only the JSON structure for the tasks and dependencies, adhering strictly to the schema provided. If you are editing existing nodes/dependencies, only include the ones you have edited, marked as 'no_change' (for tasks only), or marked for deletion in the output. Remember to place modified/new nodes so that the graph is readable by adjusting x and y positions, readable left to right.`;
 
-  // Build the user prompt: include the current state if available.
   const userPrompt = currentState
     ? `Current project state:
 ${JSON.stringify(currentState, null, 2)}
@@ -425,6 +444,11 @@ Please generate an updated project plan based on this user input: '${userInput}'
     { role: "user", content: userPrompt }
   ];
 
+  // --- Log the prompt ---
+  //console.log("--- AI Prompt ---");
+  //console.log(JSON.stringify(messages, null, 2));
+  // --- End log ---
+
   try {
     const completion = await openai.chat.completions.create({
       model: "gemini-2.5-flash-preview-04-17", // Change model if desired.
@@ -432,24 +456,33 @@ Please generate an updated project plan based on this user input: '${userInput}'
       temperature: 0.7,
     });
 
-    // Check if the response is valid.
-    
+    // --- Log the raw response ---
+    //console.log("--- AI Raw Response ---");
+    //console.log(JSON.stringify(completion, null, 2));
+    // --- End log ---
 
     const responseText = completion.choices[0].message.content.replace("```json", "").replace("```", "").trim();
 
     // Post-process the response to affix project, user id
     let responseTasks = JSON.parse(responseText);
 
+    // Ensure tasks and dependencies arrays exist even if AI omits them when no_changes_required is true
+    responseTasks.tasks = responseTasks.tasks || [];
+    responseTasks.dependencies = responseTasks.dependencies || [];
+
     responseTasks.tasks.forEach(task => {
-      task.project_id = projectId;
-      task.user_id = userId;
+      if (!task.no_change) {
+        task.project_id = projectId;
+        task.user_id = userId;
+      }
     });
     responseTasks.dependencies.forEach(dep => {
       dep.project_id = projectId;
       dep.user_id = userId;
     });
 
-    responseTasks.summary = responseTasks.summary || "No summary provided.";
+    // Ensure summary is always present.
+    responseTasks.summary = responseTasks.summary || (responseTasks.no_changes_required ? "Okay." : "No summary provided.");
 
     return responseTasks;
 
@@ -476,8 +509,6 @@ app.post('/api/generate', isAuthenticated, isPremium, async (req, res) => {
 
 app.post('/api/log-error', express.json(), (req, res) => {
   const { message, stack, componentStack, url, userAgent, timestamp } = req.body;
-  // TODO: persist to a database for error tracking
-  // console.error(`[Client Error] ${timestamp} @ ${url}\n${message}\n${stack}\nComponent stack:\n${componentStack}\nUser-Agent: ${userAgent}`);
   res.sendStatus(204);
 });
 
@@ -578,4 +609,4 @@ app.post('/api/bulk-change', isAuthenticated, async (req, res) => {
   }
 });
 
-export default app; // Export the app for testing purposes     
+export default app; // Export the app for testing purposes

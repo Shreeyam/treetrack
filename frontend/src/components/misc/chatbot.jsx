@@ -75,12 +75,21 @@ const ChatBot = ({ isOpen, onClose, currentProject, nodes, dependencies, handleG
             })
             .then((json) => {
                 if (json.data && json.data.summary) {
+                    // Add the bot's summary message regardless
                     setMessages((prevMessages) => [
                         ...prevMessages,
                         { text: json.data.summary, sender: "bot" },
                     ]);
-                    setPendingChanges(json.data);
-                    handleGenerativeEdit(json.data);
+
+                    // Check if changes are actually required
+                    if (json.data.no_changes_required) {
+                        // No changes needed, just display the summary
+                        setPendingChanges(null); // Ensure no pending changes UI
+                    } else {
+                        // Changes are proposed, show accept/reject
+                        setPendingChanges(json.data);
+                        handleGenerativeEdit(json.data);
+                    }
                 } else {
                     // Handle cases where the expected data is missing
                     throw new Error("Invalid response format from server.");

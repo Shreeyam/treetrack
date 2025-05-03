@@ -15,6 +15,7 @@ const ChatBot = ({ isOpen, onClose, currentProject, nodes, dependencies, handleG
     const [isLoading, setIsLoading] = useState(false);
     const [pendingChanges, setPendingChanges] = useState(null);
     const messagesEndRef = useRef(null); // Ref for scrolling
+    const inputRef = useRef(null); // Ref for input focus
 
     // Function to scroll to the bottom of the messages
     const scrollToBottom = () => {
@@ -25,6 +26,13 @@ const ChatBot = ({ isOpen, onClose, currentProject, nodes, dependencies, handleG
     useEffect(() => {
         scrollToBottom();
     }, [messages]);
+
+    // Auto-focus the input field when the chatbot opens
+    useEffect(() => {
+        if (isOpen && inputRef.current) {
+            inputRef.current.focus();
+        }
+    }, [isOpen]);
 
     // Function to handle sending a message
     const handleSendMessage = (event) => {
@@ -209,6 +217,7 @@ const ChatBot = ({ isOpen, onClose, currentProject, nodes, dependencies, handleG
                                 onChange={(e) => setInput(e.target.value)}
                                 placeholder="Type your request..."
                                 className="flex-1"
+                                ref={inputRef} /* Add the ref to the input element */
                                 onKeyDown={(e) => {
                                     if (e.key === "Enter" && !e.shiftKey && !isLoading && !pendingChanges) { // Prevent Enter if loading or changes pending, allow shift+enter for newline
                                         e.preventDefault(); // Prevent default newline on Enter

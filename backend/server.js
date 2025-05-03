@@ -393,7 +393,7 @@ Each task object must include:
 - posX and posY (default to 0)
 - completed (set to 0)
 - project_id and user_id (placeholders that will be filled in later)
-- color (use a HEX color code to reflect the stage or layer of the task, e.g., planning vs execution; should be pastel-ish as they will be the background for black text)
+- color (use a HEX color code to reflect the stage or layer of the task, e.g., planning vs execution; you should use '#ffcccc', '#fff2cc', '#d9ead3', or '#d2e1f3' first. If you need more than 4 categories you can create more colors; they should be pastel-ish as they will be the background for black text)
 - locked (set to 0)
 - draft (set to 1)
 - delete (set to 1 if you want to delete the task, 0 otherwise)

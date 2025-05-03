@@ -115,10 +115,10 @@ function isAuthenticated(req, res, next) {
 // Middleware to check if the user is a premium user.
 function isPremium(req, res, next) {
   if (req.session && req.session.user && req.session.user.premium) {
-    return next();
+  return next();
   }
-  return res.status(403).json({ error: "Premium access required" });
-}
+return res.status(403).json({ error: "Premium access required" });
+  }
 
 // Rate limiter for the login endpoint.
 const loginLimiter = rateLimit({
@@ -327,7 +327,8 @@ app.delete('/api/dependencies/:id', isAuthenticated, (req, res) => {
   });
 });
 
-async function generativeEdit(userInput, projectId, userId, currentState) {
+// Update the generativeEdit function signature to accept chatHistory
+async function generativeEdit(userInput, projectId, userId, currentState, chatHistory) { // Added chatHistory parameter
   const jsonSchema = `{
   "type": "object",
   "properties": {
@@ -379,10 +380,15 @@ async function generativeEdit(userInput, projectId, userId, currentState) {
   "additionalProperties": false
 }`;
 
-  // Build the system prompt with the JSON schema embedded.
+  // Build the system prompt incorporating chatHistory
   const systemPrompt = `You are a project planning assistant responsible for generating or editing a complete and logically structured plan to accomplish a high-level goal. The output must be a JSON object containing two parts: an array of 'tasks' and an array of 'dependencies' between them. The input contains the current project state (if provided) in the same structure as the output.
 
-**IMPORTANT:** If the user's request does not require *any* changes to the tasks or dependencies (e.g., it's just a greeting or a question not related to modifying the plan), respond normally and helpfully, and return the following specific JSON structure:
+**Conversation History:**
+${chatHistory.map(msg => `${msg.sender === 'user' ? 'User' : 'Assistant'}: ${msg.text}`).join('\n')}
+
+**CURRENT USER REQUEST TO RESPOND TO:** ${userInput}
+
+**IMPORTANT:** If the user's request does not require *any* changes to the tasks or dependencies (e.g., it's just a greeting or a question not related to modifying the plan), respond normally and helpfully based on the conversation history and current request, and return the following specific JSON structure:
 \`\`\`json
 {
   "tasks": [],
@@ -425,22 +431,22 @@ Each included dependency object must include:
 - project_id and user_id (placeholders that will be filled in later)
 - delete (set to 1 if you want to delete the dependency, 0 otherwise)
 
-The summary should be a short description of your generated or edited tasks and dependencies. Two sentences, maximum.
+The summary should be a short description of your generated or edited tasks and dependencies, or the aforementioned helpful response if no changes at all are required. Two sentences, maximum.
 
 Ensure that the output adheres strictly to the following JSON schema (unless the 'no_changes_required' case applies):
 ${jsonSchema}
 
 Be thoughtful and detailed. The goal is to create a structured blueprint of the steps needed to achieve the goal, with realistic precedence and parallelization. Output only the JSON structure for the tasks and dependencies, adhering strictly to the schema provided. If you are editing existing nodes/dependencies, only include the ones you have edited, marked as 'no_change' (for tasks only), or marked for deletion in the output. Remember to place modified/new nodes so that the graph is readable by adjusting x and y positions, readable left to right.`;
 
+  // Construct the user prompt part, including current state if available
   const userPrompt = currentState
-    ? `Current project state:
-${JSON.stringify(currentState, null, 2)}
-
-Please generate an updated project plan based on this user input: '${userInput}'.`
-    : `Generate a structured project plan based on this user input: '${userInput}'`;
+    ? `Current project state:\n${JSON.stringify(currentState, null, 2)}\n\nPlease generate an updated project plan based on the current user request and conversation history.`
+    : `Generate a structured project plan based on the current user request and conversation history.`;
 
   const messages = [
     { role: "system", content: systemPrompt },
+    // Note: The user's latest message is already included in the system prompt's history section.
+    // We still include a user role message, but it might be less critical now.
     { role: "user", content: userPrompt }
   ];
 
@@ -495,12 +501,12 @@ Please generate an updated project plan based on this user input: '${userInput}'
 // Endpoint to generate a project structure using OpenAI.
 app.post('/api/generate', isAuthenticated, isPremium, async (req, res) => {
   // Accept topic, project_id, and an optional current_state from the request body.
-  const { user_input: user_input, project_id, current_state } = req.body;
+  const { user_input: user_input, project_id, current_state, chat_history } = req.body; // Added chat_history
   if (!user_input || !project_id) {
     return res.status(400).json({ error: "Missing topic or project_id" });
   }
   try {
-    const projectData = await generativeEdit(user_input, project_id, req.session.user.id, current_state);
+    const projectData = await generativeEdit(user_input, project_id, req.session.user.id, current_state, chat_history); // Pass chat_history
     res.json({ data: projectData });
   } catch (error) {
     res.status(500).json({ error: "Failed to generate project structure" });

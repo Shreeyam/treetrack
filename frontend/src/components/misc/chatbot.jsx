@@ -61,7 +61,8 @@ const ChatBot = ({ isOpen, onClose, currentProject, nodes, dependencies, handleG
             credentials: "include",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                user_input: userMessage.text,
+                user_input: userMessage.text, // Keep the latest input separate for clarity if needed
+                chat_history: messages, // Send the whole message history
                 project_id: currentProject,
                 current_state: { tasks: nodeData, dependencies: dependencyData },
             }),

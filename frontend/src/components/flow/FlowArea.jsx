@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useRef, useState } from 'react';
+import React, { memo, useCallback, useRef, useState, useEffect } from 'react';
 import {
     ReactFlow,
     Background,
@@ -108,6 +108,46 @@ const FlowArea = memo(({
         handleCloseArrowMenu();
     }, [onEdgesChange, handleCloseArrowMenu]);
 
+    const handleKeyDown = useCallback((event) => {
+        // Only process if an input field isn't currently focused
+        if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+            return;
+        }
+
+        if (event.key === 'Delete' || event.key === 'Backspace') {
+            // Prevent default behavior (e.g., browser navigation on backspace)
+            event.preventDefault();
+
+            // Get selected nodes and edges
+            const selectedEdges = edges.filter(edge => edge.selected);
+            const selectedNodes = nodes.filter(node => node.selected);
+
+            // First delete edges to avoid reference errors
+            if (selectedEdges.length > 0 && onEdgesChange) {
+                selectedEdges.forEach(edge => {
+                    handleDeleteEdge(edge);
+                });
+            }
+
+            // Delete nodes using the existing node deletion mechanism
+            if (selectedNodes.length > 0) {
+                // Process node deletions one by one to properly handle cleanup
+                selectedNodes.forEach(node => {
+                    if (onDeleteNode) {
+                        onDeleteNode(node);
+                    }
+                });
+            }
+        }
+    }, [edges, nodes, handleDeleteEdge, onDeleteNode]);
+
+    useEffect(() => {
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [handleKeyDown]);
+
     return (
         <div className="flex-grow relative" ref={flowRef}>
             <ReactFlow
@@ -124,7 +164,8 @@ const FlowArea = memo(({
                 elementsSelectable={true}
                 selectionOnDrag={true}
                 selectNodesOnDrag={true}
-                multiSelectionKeyCode="Shift"
+                //multiSelectionKeyCode="Shift"
+                deleteKeyCode="null"
                 onPaneClick={handlePaneClick}
                 onPaneContextMenu={handlePaneContextMenu}
                 onInit={handleInit}

@@ -108,6 +108,18 @@ const FlowArea = memo(({
         handleCloseArrowMenu();
     }, [onEdgesChange, handleCloseArrowMenu]);
 
+    const handleNodeDragStop = useCallback((event, draggedNode) => {
+        // Find all selected nodes including the dragged one
+        const selectedNodes = nodes.filter(node => node.selected || node.id === draggedNode.id);
+        
+        // Call onNodeDragStop for each selected node
+        selectedNodes.forEach(node => {
+            if (onNodeDragStop) {
+                onNodeDragStop(event, node);
+            }
+        });
+    }, [nodes, onNodeDragStop]);
+
     const handleKeyDown = useCallback((event) => {
         // Only process if an input field isn't currently focused
         if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
@@ -159,7 +171,7 @@ const FlowArea = memo(({
                 onNodeClick={onNodeClick}
                 onNodeContextMenu={handleNodeContextMenu}
                 onEdgeContextMenu={handleEdgeContextMenu}
-                onNodeDragStop={onNodeDragStop}
+                onNodeDragStop={handleNodeDragStop}
                 onSelectionChange={onSelectionChange}
                 elementsSelectable={true}
                 selectionOnDrag={true}

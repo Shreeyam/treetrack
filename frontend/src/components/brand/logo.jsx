@@ -1,11 +1,10 @@
-import { Leaf } from 'lucide-react'
 import React from 'react';
 
 export default function Logo() {
     return (
         <div className="flex items-center">
-            <a href="/" className="flex items-center gap-2">
-                <Leaf className="h-6 w-6 text-primary" /> {/* Changed Icon to Leaf */}
+            <a href="/" className="flex items-center gap-1.5">
+                <img src="/treetracklogoSMALL.svg" alt="Treetrack Logo" className="h-8" /> {/* Added alt attribute */}
                 <span className="text-xl font-bold">Treetrack</span>
             </a>
         </div>

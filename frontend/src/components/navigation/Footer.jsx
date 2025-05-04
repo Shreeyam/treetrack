@@ -1,6 +1,7 @@
 import React from "react"
 import { Leaf } from "lucide-react"
 import { Link } from "react-router" // or react-router depending on your setup
+import Logo from "../brand/logo"
 
 export function Footer() {
     return (
@@ -10,10 +11,7 @@ export function Footer() {
                 <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2 items-center">
                     {/* Logo and Description */}
                     <div className="space-y-4">
-                        <div className="flex items-center gap-2">
-                            <Leaf className="h-6 w-6 text-primary" />
-                            <span className="text-lg font-bold">Treetrack</span>
-                        </div>
+                        <Logo/>
                         <p className="text-sm text-muted-foreground">
                             Graph-based productivity software that visualizes your workflow.
                         </p>

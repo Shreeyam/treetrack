@@ -11,6 +11,7 @@ import FlowArea from '@/components/flow/FlowArea';
 import { nodeStyles } from '@/components/flow/styles';
 import { fetchUser, fetchProjects, createProject, deleteProject, fetchTasksAndEdges, updateTask, deleteTask, deleteDependency } from './api';
 import ChatBot from './components/misc/chatbot';
+import ChecksumIndicator from './components/misc/ChecksumIndicator';
 import { createAddNewNode, mapWithChangeDetection } from './utils/nodeFunctions';
 import { useNavigate } from 'react-router';
 import { PromptDialog } from '@/components/ui/prompt-dialog';
@@ -1142,6 +1143,13 @@ function App({user, setUser}) {
                 placeholder="Enter project name"
                 onSubmit={handleConfirmCreateProject}
                 onCancel={handleCancelCreateProject}
+            />
+            
+            {/* Checksum indicator - appears at the bottom left of the screen */}
+            <ChecksumIndicator 
+                nodes={nodes}
+                edges={edges}
+                currentProject={currentProject}
             />
         </div>
     );

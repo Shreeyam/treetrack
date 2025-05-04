@@ -15,6 +15,7 @@ const ChatBot = ({ isOpen, onClose, currentProject, nodes, dependencies, handleG
     const [isLoading, setIsLoading] = useState(false);
     const [pendingChanges, setPendingChanges] = useState(null);
     const messagesEndRef = useRef(null); // Ref for scrolling
+    const inputRef = useRef(null); // Ref for input focus
 
     // Function to scroll to the bottom of the messages
     const scrollToBottom = () => {
@@ -25,6 +26,13 @@ const ChatBot = ({ isOpen, onClose, currentProject, nodes, dependencies, handleG
     useEffect(() => {
         scrollToBottom();
     }, [messages]);
+
+    // Auto-focus the input field when the chatbot opens
+    useEffect(() => {
+        if (isOpen && inputRef.current) {
+            inputRef.current.focus();
+        }
+    }, [isOpen]);
 
     // Function to handle sending a message
     const handleSendMessage = (event) => {
@@ -61,7 +69,8 @@ const ChatBot = ({ isOpen, onClose, currentProject, nodes, dependencies, handleG
             credentials: "include",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                user_input: userMessage.text,
+                user_input: userMessage.text, // Keep the latest input separate for clarity if needed
+                chat_history: messages, // Send the whole message history
                 project_id: currentProject,
                 current_state: { tasks: nodeData, dependencies: dependencyData },
             }),
@@ -75,12 +84,21 @@ const ChatBot = ({ isOpen, onClose, currentProject, nodes, dependencies, handleG
             })
             .then((json) => {
                 if (json.data && json.data.summary) {
+                    // Add the bot's summary message regardless
                     setMessages((prevMessages) => [
                         ...prevMessages,
                         { text: json.data.summary, sender: "bot" },
                     ]);
-                    setPendingChanges(json.data);
-                    handleGenerativeEdit(json.data);
+
+                    // Check if changes are actually required
+                    if (json.data.no_changes_required) {
+                        // No changes needed, just display the summary
+                        setPendingChanges(null); // Ensure no pending changes UI
+                    } else {
+                        // Changes are proposed, show accept/reject
+                        setPendingChanges(json.data);
+                        handleGenerativeEdit(json.data);
+                    }
                 } else {
                     // Handle cases where the expected data is missing
                     throw new Error("Invalid response format from server.");
@@ -199,6 +217,7 @@ const ChatBot = ({ isOpen, onClose, currentProject, nodes, dependencies, handleG
                                 onChange={(e) => setInput(e.target.value)}
                                 placeholder="Type your request..."
                                 className="flex-1"
+                                ref={inputRef} /* Add the ref to the input element */
                                 onKeyDown={(e) => {
                                     if (e.key === "Enter" && !e.shiftKey && !isLoading && !pendingChanges) { // Prevent Enter if loading or changes pending, allow shift+enter for newline
                                         e.preventDefault(); // Prevent default newline on Enter

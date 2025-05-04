@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ReactFlowProvider, applyNodeChanges, addEdge } from '@xyflow/react';
+import { ReactFlowProvider, applyNodeChanges, addEdge, applyEdgeChanges } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import '@/globals.css';
 import "@/App.css";
@@ -322,6 +322,20 @@ function App({user, setUser}) {
     );
 
     // --- Edge Management ---
+    const onEdgesChange = useCallback(
+        (changes) => {
+            setEdges((prevEdges) => applyEdgeChanges(changes, prevEdges));
+
+            // Handle edge deletion from the context menu
+            changes.forEach(change => {
+                if (change.type === 'remove') {
+                    deleteDependency(change.id);
+                }
+            });
+        },
+        [] // No dependencies needed as deleteDependency is stable
+    );
+
     const onConnect = useCallback(
         (params) => {
             const tempEdgeId = `e${params.source}-${params.target}`;
@@ -528,6 +542,21 @@ function App({user, setUser}) {
         // assign a new auto-incremented ID.
         const updatedNodes = data.tasks.map(task => {
             const origId = task.id.toString();
+
+            // --- Handle no_change --- 
+            if (task.no_change) {
+                const existingNode = prevNodeMap.get(origId);
+                if (existingNode) {
+                    // Return the existing node as is, ensuring draft is false
+                    return { ...existingNode, draft: false }; 
+                } else {
+                    // Should not happen if AI follows instructions, but handle defensively
+                    console.warn(`Task ${origId} marked no_change but not found in previous state.`);
+                    return null; // Or handle as an error
+                }
+            }
+            // --- End handle no_change ---
+
             // If the task has a delete flag set to true, mark it for deletion.
             if (task.delete) {
                 return { id: origId, delete: true };
@@ -571,7 +600,7 @@ function App({user, setUser}) {
                 targetPosition: 'left',
                 draft: isDraft
             };
-        });
+        }).filter(node => node !== null); // Filter out any nulls from no_change warning
 
         // Process dependencies to create the updated edges.
         // For each dependency, if it does not exist in the current state, assign a new, auto-incremented ID.
@@ -646,11 +675,10 @@ function App({user, setUser}) {
         const currentNodes = nodesRef.current;
         const currentEdges = edgesRef.current;
         const projectId = parseInt(currentProjectRef.current, 10);
-        // Build maps of the previous state for quick lookups
+// Build maps of the previous state for quick lookups
         const prevNodesMap = new Map(prevNodes.map((n) => [n.id, n]));
         const prevEdgesMap = new Map(prevEdges.map((e) => [e.id, e]));
 
-        // Buckets for the bulk payload
         const createdTasks = [];
         const updatedTasks = [];
         const deletedTaskIds = [];
@@ -661,36 +689,46 @@ function App({user, setUser}) {
 
         // 1) Classify nodes
         for (let node of currentNodes) {
-            const taskBody = {
-                title: node.data.label,
-                posX: node.position.x,
-                posY: node.position.y,
-                completed: node.data.completed ? 1 : 0,
-                color: node.data.color,
-                project_id: projectId,
-            };
-
+            // --- Skip nodes that weren't part of the draft changes --- 
+            if (!node.draft && !prevNodesMap.has(node.id)) {
+                // This node existed before and wasn't marked as draft (i.e., wasn't no_change or modified)
+                continue; 
+            }
+            // --- If it *was* a draft, process it --- 
             if (node.draft) {
-                // did this exist before?
+                 const taskBody = {
+                    title: node.data.label,
+                    posX: node.position.x,
+                    posY: node.position.y,
+                    completed: node.data.completed ? 1 : 0,
+                    color: node.data.color,
+                    project_id: projectId,
+                };
                 if (prevNodesMap.has(node.id)) {
+                    // It existed before and was modified (draft=true)
                     updatedTasks.push({ id: parseInt(node.id, 10), ...taskBody });
                 } else {
+                    // It's a new node (draft=true)
                     createdTasks.push({ tempId: node.id, ...taskBody });
                 }
             }
         }
 
-        // Deletions: anything in prevNodes that doesn't survive
+        // Deletions: anything in prevNodes that doesn't survive in currentNodes
         for (let prev of prevNodes) {
             if (!currentNodes.some((n) => n.id === prev.id)) {
                 deletedTaskIds.push(parseInt(prev.id, 10));
             }
         }
 
-        // 2) Classify edges
+        // 2) Classify edges (similar logic, skip non-drafts unless deleted)
         for (let edge of currentEdges) {
-            if (edge.draft) {
+             if (!edge.draft && !prevEdgesMap.has(edge.id)) {
+                 continue;
+             }
+             if (edge.draft) {
                 const depBody = {
+                    // Ensure source/target IDs are integers for the backend
                     from_task: parseInt(edge.source, 10),
                     to_task: parseInt(edge.target, 10),
                     project_id: projectId,
@@ -699,6 +737,9 @@ function App({user, setUser}) {
                 if (prevEdgesMap.has(edge.id)) {
                     updatedDeps.push({ id: parseInt(edge.id, 10), ...depBody });
                 } else {
+                    // Need to map temp task IDs if source/target were new tasks
+                    // Note: This assumes the backend handles mapping temp *edge* IDs implicitly
+                    // If backend needs temp edge IDs mapped, more logic is needed here.
                     createdDeps.push(depBody);
                 }
             }
@@ -710,7 +751,7 @@ function App({user, setUser}) {
             }
         }
 
-        // 3) Send one bulk request
+        // 3) Send bulk request (only if there are changes)
         const payload = {
             project_id: projectId,
             tasks: {
@@ -724,6 +765,19 @@ function App({user, setUser}) {
                 deleted: deletedDepIds,
             },
         };
+
+        // Only send if there's something to change
+        if (createdTasks.length === 0 && updatedTasks.length === 0 && deletedTaskIds.length === 0 &&
+            createdDeps.length === 0 && updatedDeps.length === 0 && deletedDepIds.length === 0) {
+            console.log("No changes to accept.");
+            // Reset history even if no changes were sent
+            setPrevNodes([]);
+            setPrevEdges([]);
+            // Clear any potential lingering draft states just in case (though should be handled by no_change)
+             setNodes((nodes) => nodes.map((n) => n.draft ? { ...n, draft: false, style: createNodeStyle(n.data.color, n.data.completed, n.selected, false) } : n));
+             setEdges((edges) => edges.map((e) => e.draft ? { ...e, draft: false } : e));
+            return; 
+        }
 
         try {
             // Optimistically clear the drafts in UI
@@ -748,15 +802,20 @@ function App({user, setUser}) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
+            
+            if (!res.ok) {
+                throw new Error(`Bulk change failed with status: ${res.status}`);
+            }
+
             const result = await res.json();
-            // result should contain something like:
-            // { tasksCreated: [ { tempId: "-3", newId: 42 }, … ], … }
 
             // 4) Replace temp IDs with real IDs
             const idMap = new Map();
             (result.tasksCreated || []).forEach(({ tempId, newId }) => {
                 idMap.set(String(tempId), String(newId));
             });
+            // Map dependency IDs if backend provides them (assuming it might)
+            // Example: (result.dependenciesCreated || []).forEach(({ tempId, newId }) => { idMap.set(String(tempId), String(newId)); });
 
             // Patch nodes
             let patchedNodes = nodesRef.current.map((n) => {
@@ -766,11 +825,13 @@ function App({user, setUser}) {
                     : n;
             });
 
-            // Patch edges
+            // Patch edges (source, target, and potentially edge ID itself)
             let patchedEdges = edgesRef.current.map((e) => {
                 let src = idMap.get(e.source) || e.source;
                 let tgt = idMap.get(e.target) || e.target;
-                return { ...e, source: src, target: tgt };
+                // let edgeId = idMap.get(e.id) || e.id; // If backend maps edge IDs
+                // return { ...e, id: edgeId, source: src, target: tgt };
+                 return { ...e, source: src, target: tgt };
             });
 
             // Commit the patched graph
@@ -785,6 +846,7 @@ function App({user, setUser}) {
             setNodes(prevNodes);
             setEdges(prevEdges);
             console.error('Bulk change failed', err);
+            // Optionally: Show an error message to the user
         }
     }, [
         prevNodes,
@@ -926,9 +988,9 @@ function App({user, setUser}) {
                     outline: '2px solid green',
                 };
             } else if (showUpDownstream && isDownstream) {
-                nextStyle = { ...nextStyle, outline: '2px solid #FFD700' }; // Yellow for downstream
+                nextStyle = { ...nextStyle, outline: '2px solid #FFD700', boxShadow: '0 0 10px 1px #FFD700' }; // Yellow for downstream + glow
             } else if (showUpDownstream && isUpstream) {
-                nextStyle = { ...nextStyle, outline: '2px solid #9370DB' }; // Purple for upstream
+                nextStyle = { ...nextStyle, outline: '2px solid #9370DB', boxShadow: '0 0 10px 1px #9370DB' }; // Purple for upstream + glow
             } else if (highlightNext) {
                 nextStyle = nextTaskIds.has(node.id)
                     ? { ...nextStyle, opacity: 1 }
@@ -1017,6 +1079,7 @@ function App({user, setUser}) {
                     nodes={renderedNodes}
                     edges={visibleEdges}
                     onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
                     onNodeMouseDown={handleNodeClick}
                     onNodeContextMenu={handleNodeContextMenu}

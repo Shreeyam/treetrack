@@ -9,6 +9,8 @@ import bcrypt from 'bcrypt';
 import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
 import OpenAI from 'openai';
+import { zodResponseFormat } from 'openai/helpers/zod';
+import { z } from 'zod';
 import 'dotenv/config';
 
 const SQLiteStore = connectSqlite3(session);
@@ -329,6 +331,39 @@ app.delete('/api/dependencies/:id', isAuthenticated, (req, res) => {
 
 // Update the generativeEdit function signature to accept chatHistory
 async function generativeEdit(userInput, projectId, userId, currentState, chatHistory) { // Added chatHistory parameter
+  // Define Zod schema that matches our JSON schema
+  const TaskSchema = z.object({
+    id: z.number(),
+    title: z.string().optional(),
+    posX: z.number().optional(),
+    posY: z.number().optional(),
+    completed: z.number().optional(),
+    project_id: z.number().optional(),
+    user_id: z.number().optional(),
+    color: z.string().optional(),
+    locked: z.number().optional(),
+    draft: z.number().optional(),
+    delete: z.number().optional(),
+    no_change: z.boolean().optional()
+  });
+
+  const DependencySchema = z.object({
+    id: z.number(),
+    from_task: z.number(),
+    to_task: z.number(),
+    project_id: z.number().optional(),
+    user_id: z.number().optional(),
+    delete: z.number().optional()
+  });
+
+  const ResponseSchema = z.object({
+    tasks: z.array(TaskSchema),
+    dependencies: z.array(DependencySchema),
+    summary: z.string(),
+    no_changes_required: z.boolean().optional()
+  });
+
+  // The JSON schema is kept for documentation purposes
   const jsonSchema = `{
   "type": "object",
   "properties": {
@@ -450,32 +485,23 @@ Be thoughtful and detailed. The goal is to create a structured blueprint of the 
     { role: "user", content: userPrompt }
   ];
 
-  // --- Log the prompt ---
-  //console.log("--- AI Prompt ---");
-  //console.log(JSON.stringify(messages, null, 2));
-  // --- End log ---
-
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gemini-2.5-flash-preview-04-17", // Change model if desired.
+    // Use the structured output with Zod schema validation
+    const completion = await openai.beta.chat.completions.parse({
+      model: "gemini-2.5-flash-preview-04-17",
       messages: messages,
       temperature: 0.7,
+      response_format: zodResponseFormat(ResponseSchema, "projectPlan"),
     });
 
-    // --- Log the raw response ---
-    //console.log("--- AI Raw Response ---");
-    //console.log(JSON.stringify(completion, null, 2));
-    // --- End log ---
-
-    const responseText = completion.choices[0].message.content.replace("```json", "").replace("```", "").trim();
-
-    // Post-process the response to affix project, user id
-    let responseTasks = JSON.parse(responseText);
+    // The response is already parsed into the correct structure
+    const responseTasks = completion.choices[0].message.parsed;
 
     // Ensure tasks and dependencies arrays exist even if AI omits them when no_changes_required is true
     responseTasks.tasks = responseTasks.tasks || [];
     responseTasks.dependencies = responseTasks.dependencies || [];
 
+    // Post-process the response to affix project, user id
     responseTasks.tasks.forEach(task => {
       if (!task.no_change) {
         task.project_id = projectId;

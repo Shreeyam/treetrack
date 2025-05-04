@@ -17,11 +17,11 @@ import {
     FolderPlus,
     FolderMinus,
     User,
-    MessageCirclePlus,
     Coffee,
     LogOut,
     ChevronDown
 } from 'lucide-react';
+import { siDiscord } from 'simple-icons';
 
 const TopBar = memo(({
     newTaskTitle,
@@ -149,11 +149,18 @@ const TopBar = memo(({
                     <DropdownMenuContent align="end">
                         <DropdownMenuItem asChild>
                             <a
-                                href="https://github.com/Shreeyam/treetrack/issues"
+                                href="https://discord.gg/BNpkcWCxGX"
                                 target="_blank"
                                 rel="noopener noreferrer"
+                                className="flex items-center"
                             >
-                                <MessageCirclePlus /> Feature Request
+                                <div 
+                                    className="h-4 w-4"
+                                    dangerouslySetInnerHTML={{ 
+                                        __html: siDiscord.svg.replace('role="img" viewBox', 'role="img" width="16" height="16" fill="#737373" viewBox') 
+                                    }}
+                                />
+                                Feature Request
                             </a>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild>

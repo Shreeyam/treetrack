@@ -184,6 +184,7 @@ const FlowArea = memo(({
                 snapToGrid={snapToGridOn}
                 snapGrid={[10, 10]}
                 fitView
+                minZoom={0.15}
             >
                 {minimapOn && (
                     <MiniMap

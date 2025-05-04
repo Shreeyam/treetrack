@@ -72,8 +72,8 @@ export default function ChecksumIndicator({ nodes, edges, currentProject }) {
       title="Validate project state with server"
       style={{
         position: 'fixed',
-        bottom: '12px',
-        left:  '12px',
+        bottom: '18px',
+        left:  '52px',
         width:  '14px',
         height: '14px',
         borderRadius: '50%',

@@ -29,7 +29,7 @@ const NODE_HEIGHT = 50; // Approximate node height for bounds checking
 function App({user, setUser}) {
     // --- Main App States ---
     const [projects, setProjects] = useState([]);
-    const [currentProject, setCurrentProject] = useState(() => localStorage.getItem('currentProject') || '');
+    const [currentProject, setCurrentProject] = useState(''); // Don't load from localStorage until user is authenticated
     const [nodes, setNodes] = useState([]);
     const [edges, setEdges] = useState([]);
     const [prevNodes, setPrevNodes] = useState([]);
@@ -86,11 +86,15 @@ function App({user, setUser}) {
             .then(data => {
                 if (data.user) {
                     setUser(data.user);
+                    // Replaced alert(data) with a more descriptive message
+                    
                 }
+                else { navigate('/login'); } // Redirect to login if no user data
             })
             .catch(err => {
                 if(err.status === 401) {
                     setUser(null);
+                    alert('Session expired. Please log in again.');
                     navigate('/login'); // Redirect to login if not authenticated
                 }
                 console.error(err);
@@ -99,14 +103,19 @@ function App({user, setUser}) {
     }, []);
 
     useEffect(() => {
-        if (user) {
+        if (user && user.id) { // Only fetch projects if we have a valid user object
             fetchProjects()
                 .then(data => {
                     setProjects(data.projects);
-                    if (data.projects.length > 0 && (!currentProject || !data.projects.some(p => p.id.toString() === currentProject))) {
+                    // After fetching projects, get the saved project from localStorage
+                    const savedProject = localStorage.getItem('currentProject');
+                    if (data.projects.length > 0 && (!savedProject || !data.projects.some(p => p.id.toString() === savedProject))) {
                         const firstProjectId = data.projects[0].id.toString();
                         setCurrentProject(firstProjectId);
                         localStorage.setItem('currentProject', firstProjectId);
+                    } else if (savedProject && data.projects.some(p => p.id.toString() === savedProject)) {
+                        // Only set the current project if it exists in the fetched projects
+                        setCurrentProject(savedProject);
                     }
                 })
                 .catch(err => console.error(err));
@@ -114,7 +123,7 @@ function App({user, setUser}) {
     }, [user]);
 
     useEffect(() => {
-        if (currentProject) {
+        if (currentProject && user && user.id) { // Only fetch data if we have a valid user and project
             fetchTasksAndEdges(currentProject)
                 .then(({ tasks, dependencies }) => {
                     const newNodes = tasks.map(task => ({
@@ -140,12 +149,15 @@ function App({user, setUser}) {
 
             localStorage.setItem('currentProject', currentProject);
         }
-    }, [currentProject]);
+    }, [currentProject, user]); // Add user as a dependency
 
     const handleLogout = useCallback(() => {
         fetch('/api/logout', { method: 'POST', credentials: 'include' })
-            .then(() => setUser(null));
-    }, []);
+            .then(() => {
+                setUser(null);
+                navigate('/'); // Navigate to homepage after logout
+            });
+    }, [navigate]);
 
     // --- View Options Persistence ---
     useEffect(() => {

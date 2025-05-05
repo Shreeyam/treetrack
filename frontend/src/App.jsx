@@ -11,6 +11,7 @@ import FlowArea from '@/components/flow/FlowArea';
 import { nodeStyles } from '@/components/flow/styles';
 import { fetchUser, fetchProjects, createProject, deleteProject, fetchTasksAndEdges, updateTask, deleteTask, deleteDependency } from './api';
 import ChatBot from './components/misc/chatbot';
+import ChecksumIndicator from './components/misc/ChecksumIndicator';
 import { createAddNewNode, mapWithChangeDetection } from './utils/nodeFunctions';
 import { useNavigate } from 'react-router';
 import { PromptDialog } from '@/components/ui/prompt-dialog';
@@ -301,16 +302,22 @@ function App({user, setUser}) {
 
     const onNodeDragStop = useCallback(
         (event, node) => {
-            updateTask(node.id, {
-                title: node.data.label,
-                posX: node.position.x,
-                posY: node.position.y,
-                completed: node.data.completed ? 1 : 0,
-                color: node.data.color,
-                project_id: parseInt(currentProject)
+            // Wait one frame so React-Flow finishes updating the node state
+            requestAnimationFrame(() => {
+                const latest = nodesRef.current.find(n => n.id === node.id);
+                if (!latest || latest.draft) return;   // ignore missing or AI-draft nodes
+
+                updateTask(latest.id, {
+                    title: latest.data.label,
+                    posX: latest.position.x,
+                    posY: latest.position.y,
+                    completed: latest.data.completed ? 1 : 0,
+                    color: latest.data.color,
+                    project_id: parseInt(currentProjectRef.current)
+                });
             });
         },
-        [currentProject]
+        []  // No dependencies needed as we're using refs for current state
     );
 
     const addNewNode = useCallback(
@@ -1142,6 +1149,13 @@ function App({user, setUser}) {
                 placeholder="Enter project name"
                 onSubmit={handleConfirmCreateProject}
                 onCancel={handleCancelCreateProject}
+            />
+            
+            {/* Checksum indicator - appears at the bottom left of the screen */}
+            <ChecksumIndicator 
+                nodes={nodes}
+                edges={edges}
+                currentProject={currentProject}
             />
         </div>
     );

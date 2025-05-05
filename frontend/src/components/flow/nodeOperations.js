@@ -95,7 +95,7 @@ export const addNewNode = (
         posY: newPosition.y,
         completed: 0,
         project_id: parseInt(currentProject, 10),
-        color: ''
+        color: '#ffffff'
     };
 
     fetch('/api/tasks', {

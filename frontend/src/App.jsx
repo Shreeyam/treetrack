@@ -302,16 +302,22 @@ function App({user, setUser}) {
 
     const onNodeDragStop = useCallback(
         (event, node) => {
-            updateTask(node.id, {
-                title: node.data.label,
-                posX: node.position.x,
-                posY: node.position.y,
-                completed: node.data.completed ? 1 : 0,
-                color: node.data.color,
-                project_id: parseInt(currentProject)
+            // Wait one frame so React-Flow finishes updating the node state
+            requestAnimationFrame(() => {
+                const latest = nodesRef.current.find(n => n.id === node.id);
+                if (!latest || latest.draft) return;   // ignore missing or AI-draft nodes
+
+                updateTask(latest.id, {
+                    title: latest.data.label,
+                    posX: latest.position.x,
+                    posY: latest.position.y,
+                    completed: latest.data.completed ? 1 : 0,
+                    color: latest.data.color,
+                    project_id: parseInt(currentProjectRef.current)
+                });
             });
         },
-        [currentProject]
+        []  // No dependencies needed as we're using refs for current state
     );
 
     const addNewNode = useCallback(

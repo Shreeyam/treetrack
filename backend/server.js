@@ -246,10 +246,10 @@ app.get('/api/tasks', isAuthenticated, (req, res) => {
 });
 
 app.post('/api/tasks', isAuthenticated, (req, res) => {
-  const { title, posX, posY, completed, project_id } = req.body;
+  const { title, posX, posY, completed, project_id, color } = req.body;  // Added color to destructuring
   db.run(
-    "INSERT INTO tasks (title, posX, posY, completed, project_id, user_id) VALUES (?, ?, ?, ?, ?, ?)",
-    [title, posX || 0, posY || 0, completed || 0, project_id, req.session.user.id],
+    "INSERT INTO tasks (title, posX, posY, completed, project_id, user_id, color) VALUES (?, ?, ?, ?, ?, ?, ?)",  // Added color to INSERT
+    [title, posX || 0, posY || 0, completed || 0, project_id, req.session.user.id, color || '#ffffff'],  // Added color with default
     function (err) {
       if (err) return res.status(400).json({ error: err.message });
       res.json({ id: this.lastID });

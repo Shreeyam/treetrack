@@ -98,4 +98,12 @@ export const generate = async (userInput, projectId, currentState) => {
     body: JSON.stringify({ user_input: userInput, project_id: projectId, current_state: currentState }),
   });
   return res.json();
-}
+};
+
+export const fetchProjectState = async (projectId) => {
+  const tasksRes = await fetch(`/api/tasks?project_id=${projectId}`, { credentials: 'include' });
+  const depRes   = await fetch(`/api/dependencies?project_id=${projectId}`, { credentials: 'include' });
+  const tasks    = (await tasksRes.json()).tasks;
+  const deps     = (await depRes.json()).dependencies;
+  return { tasks, dependencies: deps };
+};

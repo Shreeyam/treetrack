@@ -357,15 +357,12 @@ function App({ user, setUser }) {
 
     const onConnect = useCallback(
         (params) => {
+            // Check if the edge already exists
+            const existingEdge = edges.find(edge => edge.source === params.source && edge.target === params.target);
+            if (!existingEdge) {
             const tempEdgeId = `e${params.source}-${params.target}`;
             const newEdge = { ...params, id: tempEdgeId, markerEnd: { type: 'arrowclosed' } };
 
-            // Check if the edge already exists
-            console.log(params.source)
-            console.log(params.target)
-            const existingEdge = edges.find(edge => edge.source === params.source && edge.target === params.target);
-            console.log('Existing edge:', existingEdge);
-            if (!existingEdge) {
 
                 setEdges((eds) => addEdge(newEdge, eds));
 

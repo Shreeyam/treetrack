@@ -3,6 +3,7 @@ import { ReactFlowProvider, applyNodeChanges, addEdge, applyEdgeChanges } from '
 import '@xyflow/react/dist/style.css';
 import '@/globals.css';
 import "@/App.css";
+import "@/hocus.js";
 import * as dagre from 'dagre';
 import blendColors from './utils/colors';
 import AuthForm from '@/components/auth/AuthForm';

@@ -13,6 +13,7 @@ import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import 'dotenv/config';
 
+import expressWebsockets from "express-ws";
 const SQLiteStore = connectSqlite3(session);
 
 // const openai = new OpenAI();
@@ -33,13 +34,18 @@ app.use(express.json());
 app.set('trust proxy', 1);
 
 // Configure sessions with a SQLite store.
-app.use(session({
+const sessionParser = session({
   store: new SQLiteStore({ db: 'sessions.db', dir: './' }),
   secret: crypto.randomBytes(64).toString('hex'),
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, secure: process.env.NODE_ENV === 'production', domain: process.env.NODE_ENV === 'production' ? 'treetrack.xyz' : undefined } // 7 days persistence
-}));
+  cookie: { 
+    maxAge: 7 * 24 * 60 * 60 * 1000, 
+    secure: process.env.NODE_ENV === 'production', 
+    domain: process.env.NODE_ENV === 'production' ? 'treetrack.xyz' : undefined
+  } // 7 days persistence
+})
+app.use(sessionParser);
 
 // Connect to our main SQLite DB.
 const db = new sqlite3.Database('./todos.db', (err) => {
@@ -641,4 +647,5 @@ app.post('/api/bulk-change', isAuthenticated, async (req, res) => {
   }
 });
 
-export default app; // Export the app for testing purposes
+
+export { app, sessionParser, db };

@@ -1,6 +1,9 @@
 // src/api.js
 const API_BASE = 'http://localhost:3001';
 
+// Import functionality from hocus.js
+import { initializeHocusProvider } from "./hocus.js";
+
 export const fetchTasks = async () => {
   const res = await fetch(`${API_BASE}/tasks`);
   return res.json();
@@ -58,6 +61,12 @@ export const deleteProject = async (projectId) => {
 };
 
 export const fetchTasksAndEdges = async (projectId) => {
+  console.log(`Fetching tasks and dependencies for project: ${projectId}`);
+  
+  // Use the hocus provider for this project
+  const { provider, tasks } = initializeHocusProvider(projectId);
+  
+  // Continue with regular API calls
   const tasksRes = await fetch(`/api/tasks?project_id=${projectId}`, { credentials: 'include' });
   const tasksData = await tasksRes.json();
 

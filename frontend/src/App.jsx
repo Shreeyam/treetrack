@@ -27,7 +27,7 @@ const VIEWPORT_START_OFFSET = { x: 50, y: 50 }; // Offset from viewport top-left
 const NODE_WIDTH = 150; // Approximate node width for bounds checking
 const NODE_HEIGHT = 50; // Approximate node height for bounds checking
 
-function App({user, setUser}) {
+function App({ user, setUser }) {
     // --- Main App States ---
     const [projects, setProjects] = useState([]);
     const [currentProject, setCurrentProject] = useState(''); // Don't load from localStorage until user is authenticated
@@ -88,12 +88,12 @@ function App({user, setUser}) {
                 if (data.user) {
                     setUser(data.user);
                     // Replaced alert(data) with a more descriptive message
-                    
+
                 }
                 else { navigate('/login'); } // Redirect to login if no user data
             })
             .catch(err => {
-                if(err.status === 401) {
+                if (err.status === 401) {
                     setUser(null);
                     alert('Session expired. Please log in again.');
                     navigate('/login'); // Redirect to login if not authenticated
@@ -321,19 +321,19 @@ function App({user, setUser}) {
     );
 
     const addNewNode = useCallback(
-        (position) => createAddNewNode({ 
-            newTaskTitle, 
-            currentProject, 
-            reactFlowInstance, 
-            reactFlowWrapper, 
-            lastNodePosition, 
-            cascadeCount, 
-            cascadeStartPoint, 
-            createNodeStyle, 
-            setCascadeCount, 
-            setCascadeStartPoint, 
-            setLastNodePosition, 
-            setNewTaskTitle, 
+        (position) => createAddNewNode({
+            newTaskTitle,
+            currentProject,
+            reactFlowInstance,
+            reactFlowWrapper,
+            lastNodePosition,
+            cascadeCount,
+            cascadeStartPoint,
+            createNodeStyle,
+            setCascadeCount,
+            setCascadeStartPoint,
+            setLastNodePosition,
+            setNewTaskTitle,
             setNodes,
             position
         })(),
@@ -359,28 +359,37 @@ function App({user, setUser}) {
         (params) => {
             const tempEdgeId = `e${params.source}-${params.target}`;
             const newEdge = { ...params, id: tempEdgeId, markerEnd: { type: 'arrowclosed' } };
-            setEdges((eds) => addEdge(newEdge, eds));
 
-            fetch('/api/dependencies', {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    from_task: parseInt(params.source),
-                    to_task: parseInt(params.target),
-                    project_id: parseInt(currentProject)
+            // Check if the edge already exists
+            console.log(params.source)
+            console.log(params.target)
+            const existingEdge = edges.find(edge => edge.source === params.source && edge.target === params.target);
+            console.log('Existing edge:', existingEdge);
+            if (!existingEdge) {
+
+                setEdges((eds) => addEdge(newEdge, eds));
+
+                fetch('/api/dependencies', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        from_task: parseInt(params.source),
+                        to_task: parseInt(params.target),
+                        project_id: parseInt(currentProject)
+                    })
                 })
-            })
-                .then(res => res.json())
-                .then(data => {
-                    setEdges((prevEdges) =>
-                        prevEdges.map(e =>
-                            e.id === tempEdgeId ? { ...e, id: data.id.toString() } : e
-                        )
-                    );
-                });
+                    .then(res => res.json())
+                    .then(data => {
+                        setEdges((prevEdges) =>
+                            prevEdges.map(e =>
+                                e.id === tempEdgeId ? { ...e, id: data.id.toString() } : e
+                            )
+                        );
+                    });
+            }
         },
-        [currentProject]
+        [currentProject, edges]
     );
 
     // --- Node Interaction Handlers ---
@@ -510,7 +519,7 @@ function App({user, setUser}) {
 
     const handleConfirmDeleteSubtree = useCallback(() => {
         if (!nodeToDeleteSubtree) return;
-        
+
         const toDelete = new Set();
         const dfs = (nodeId) => {
             if (toDelete.has(nodeId)) return;
@@ -523,7 +532,7 @@ function App({user, setUser}) {
         });
         setNodes(prev => prev.filter(n => !toDelete.has(n.id)));
         setEdges(prev => prev.filter(e => !toDelete.has(e.source) && !toDelete.has(e.target)));
-        
+
         setDeleteSubtreeDialog(false);
         setNodeToDeleteSubtree(null);
     }, [nodeToDeleteSubtree, edges]);
@@ -567,7 +576,7 @@ function App({user, setUser}) {
                 const existingNode = prevNodeMap.get(origId);
                 if (existingNode) {
                     // Return the existing node as is, ensuring draft is false
-                    return { ...existingNode, draft: false }; 
+                    return { ...existingNode, draft: false };
                 } else {
                     // Should not happen if AI follows instructions, but handle defensively
                     console.warn(`Task ${origId} marked no_change but not found in previous state.`);
@@ -694,7 +703,7 @@ function App({user, setUser}) {
         const currentNodes = nodesRef.current;
         const currentEdges = edgesRef.current;
         const projectId = parseInt(currentProjectRef.current, 10);
-// Build maps of the previous state for quick lookups
+        // Build maps of the previous state for quick lookups
         const prevNodesMap = new Map(prevNodes.map((n) => [n.id, n]));
         const prevEdgesMap = new Map(prevEdges.map((e) => [e.id, e]));
 
@@ -711,11 +720,11 @@ function App({user, setUser}) {
             // --- Skip nodes that weren't part of the draft changes --- 
             if (!node.draft && !prevNodesMap.has(node.id)) {
                 // This node existed before and wasn't marked as draft (i.e., wasn't no_change or modified)
-                continue; 
+                continue;
             }
             // --- If it *was* a draft, process it --- 
             if (node.draft) {
-                 const taskBody = {
+                const taskBody = {
                     title: node.data.label,
                     posX: node.position.x,
                     posY: node.position.y,
@@ -742,10 +751,10 @@ function App({user, setUser}) {
 
         // 2) Classify edges (similar logic, skip non-drafts unless deleted)
         for (let edge of currentEdges) {
-             if (!edge.draft && !prevEdgesMap.has(edge.id)) {
-                 continue;
-             }
-             if (edge.draft) {
+            if (!edge.draft && !prevEdgesMap.has(edge.id)) {
+                continue;
+            }
+            if (edge.draft) {
                 const depBody = {
                     // Ensure source/target IDs are integers for the backend
                     from_task: parseInt(edge.source, 10),
@@ -793,9 +802,9 @@ function App({user, setUser}) {
             setPrevNodes([]);
             setPrevEdges([]);
             // Clear any potential lingering draft states just in case (though should be handled by no_change)
-             setNodes((nodes) => nodes.map((n) => n.draft ? { ...n, draft: false, style: createNodeStyle(n.data.color, n.data.completed, n.selected, false) } : n));
-             setEdges((edges) => edges.map((e) => e.draft ? { ...e, draft: false } : e));
-            return; 
+            setNodes((nodes) => nodes.map((n) => n.draft ? { ...n, draft: false, style: createNodeStyle(n.data.color, n.data.completed, n.selected, false) } : n));
+            setEdges((edges) => edges.map((e) => e.draft ? { ...e, draft: false } : e));
+            return;
         }
 
         try {
@@ -821,7 +830,7 @@ function App({user, setUser}) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
-            
+
             if (!res.ok) {
                 throw new Error(`Bulk change failed with status: ${res.status}`);
             }
@@ -850,7 +859,7 @@ function App({user, setUser}) {
                 let tgt = idMap.get(e.target) || e.target;
                 // let edgeId = idMap.get(e.id) || e.id; // If backend maps edge IDs
                 // return { ...e, id: edgeId, source: src, target: tgt };
-                 return { ...e, source: src, target: tgt };
+                return { ...e, source: src, target: tgt };
             });
 
             // Commit the patched graph
@@ -940,7 +949,7 @@ function App({user, setUser}) {
     const handleCloseChatbot = useCallback(() => {
         setGenerativeMode(false);
     }
-    , []);
+        , []);
 
     // --- Memoized Computation of Visible and Rendered Nodes/Edges ---
     const nextTaskIds = useMemo(() => {
@@ -988,10 +997,10 @@ function App({user, setUser}) {
 
             // Track downstream and upstream nodes of the selected node
             // Use the derived currentSelectedNodes list
-            const isDownstream = currentSelectedNodes.length === 1 && edges.some(e => 
+            const isDownstream = currentSelectedNodes.length === 1 && edges.some(e =>
                 e.source === currentSelectedNodes[0].id && e.target === node.id
             );
-            const isUpstream = currentSelectedNodes.length === 1 && edges.some(e => 
+            const isUpstream = currentSelectedNodes.length === 1 && edges.some(e =>
                 e.target === currentSelectedNodes[0].id && e.source === node.id
             );
 
@@ -1056,7 +1065,7 @@ function App({user, setUser}) {
             reactFlowInstance.fitView();
         }
     }
-    , [reactFlowInstance]);
+        , [reactFlowInstance]);
 
     if (!user) {
         return <MemoAuthForm onLogin={setUser} />;
@@ -1150,9 +1159,9 @@ function App({user, setUser}) {
                 onSubmit={handleConfirmCreateProject}
                 onCancel={handleCancelCreateProject}
             />
-            
+
             {/* Checksum indicator - appears at the bottom left of the screen */}
-            <ChecksumIndicator 
+            <ChecksumIndicator
                 nodes={nodes}
                 edges={edges}
                 currentProject={currentProject}

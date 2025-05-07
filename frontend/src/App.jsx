@@ -1093,7 +1093,7 @@ function App({user, setUser}) {
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
-                    onNodeMouseDown={handleNodeClick}
+                    onNodeClick={handleNodeClick}
                     onNodeContextMenu={handleNodeContextMenu}
                     onNodeDragStop={onNodeDragStop}
                     onPaneClick={handlePaneClick}

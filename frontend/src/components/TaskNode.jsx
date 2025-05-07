@@ -5,7 +5,7 @@ import { Card } from 'react-bootstrap';
 const TaskNode = ({ task, position, onDrag, onCtrlClick, isSelected }) => {
   const handleMouseDown = (e) => {
     // If ctrl is held, signal that this node was ctrl‑clicked (for dependency creation)
-    if (e.ctrlKey) {
+    if (e.ctrlKey || e.metaKey) {
       onCtrlClick(task.id);
     } else {
       // Otherwise, start dragging

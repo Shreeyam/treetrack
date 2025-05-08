@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Monomaniac+One&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -42,6 +43,7 @@
     --color-sidebar-ring: var(--sidebar-ring);
     --animate-in: enter 0.05s ease;
     --animate-out: enter 0.05s ease;
+    --font-sans: 'Geist', sans-serif;
 }
 
 :root {

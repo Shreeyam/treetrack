@@ -18,7 +18,7 @@ const collaborationServer = new Hocuspocus({
   extensions: [ new SQLite({ database: 'yjs.db' }) ],
   async onConnect(data) {
     // Output some information
-    console.log(`New websocket connection`);
+    console.log(`New websocket connection to document: ${data.documentName}`);
   },
   onOpen() {
     console.log('onOpen -  trying to opened');

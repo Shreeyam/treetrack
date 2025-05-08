@@ -8,7 +8,7 @@ export const initializeHocusProvider = (projectId) => {
   // Connect it to the backend
   const provider = new HocuspocusProvider({
     url: `ws://localhost:3001/collaboration/${projectId}`,
-    name: "example-document2",
+    name: `projectdocument.${projectId}`,
   });
 
   // Define `tasks` as an Array

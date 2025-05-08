@@ -151,7 +151,7 @@ function App({user, setUser}) {
 
             localStorage.setItem('currentProject', currentProject);
         }
-    }, [currentProject, user]); // Add user as a dependency
+    }, [currentProject]); // Remove user from dependencies, only react to project changes
 
     const handleLogout = useCallback(() => {
         fetch('/api/logout', { method: 'POST', credentials: 'include' })

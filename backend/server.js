@@ -155,9 +155,9 @@ app.post('/api/register', async (req, res) => { // Make handler async for bcrypt
   } catch (error) {
     console.error("Registration error:", error);
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-      res.status(400).json({ error: error });
+      res.status(400).json({ error: error.code });
     } else {
-      res.status(500).json({ error: error });
+      res.status(500).json({ error: error.code });
     }
   }
 });
@@ -244,8 +244,14 @@ app.get('/api/projects', isAuthenticated, (req, res) => {
 app.post('/api/projects', isAuthenticated, (req, res) => {
   const { name } = req.body;
   try {
-    db.prepare("INSERT INTO projects (name, user_id) VALUES (?, ?)").run(name, req.session.user.id);
-    res.json({ id: this.lastID, name });
+    const stmt = db.prepare(
+      `INSERT INTO projects (name, user_id)
+       VALUES (?, ?)`
+    );
+    const info = stmt.run(name, req.session.user.id);
+
+    console.log(info.lastInsertRowid);
+    res.json({ id: info.lastInsertRowid, name });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -253,18 +259,36 @@ app.post('/api/projects', isAuthenticated, (req, res) => {
 
 app.delete('/api/projects/:id', isAuthenticated, (req, res) => {
   const projectId = req.params.id;
-  db.serialize(() => {
-    db.run("DELETE FROM dependencies WHERE project_id = ? AND user_id = ?", [projectId, req.session.user.id], function (err) {
-      if (err) return res.status(400).json({ error: err.message });
-      db.run("DELETE FROM tasks WHERE project_id = ? AND user_id = ?", [projectId, req.session.user.id], function (err2) {
-        if (err2) return res.status(400).json({ error: err2.message });
-        db.run("DELETE FROM projects WHERE id = ? AND user_id = ?", [projectId, req.session.user.id], function (err3) {
-          if (err3) return res.status(400).json({ error: err3.message });
-          res.json({ changes: this.changes });
-        });
-      });
-    });
-  });
+  const userId = req.session.user.id;
+
+  try {
+    const changes = db
+      .transaction((projId, uid) => {
+        db
+          .prepare(`DELETE FROM dependencies 
+                    WHERE project_id = ? 
+                      AND user_id = ?`)
+          .run(projId, uid);
+
+        db
+          .prepare(`DELETE FROM tasks 
+                    WHERE project_id = ? 
+                      AND user_id = ?`)
+          .run(projId, uid);
+
+        return db
+          .prepare(`DELETE FROM projects 
+                    WHERE id = ? 
+                      AND user_id = ?`)
+          .run(projId, uid)
+          .changes;
+      })(projectId, userId);
+
+    res.json({ changes });
+  } catch (err) {
+    // any throw inside the txn callback rolls back automatically
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // --- TASK ENDPOINTS (Authenticated) ---
@@ -296,15 +320,28 @@ app.get('/api/tasks', isAuthenticated, (req, res) => {
 
 
 app.post('/api/tasks', isAuthenticated, (req, res) => {
-  const { title, posX, posY, completed, project_id, color } = req.body;  // Added color to destructuring
-  db.run(
-    "INSERT INTO tasks (title, posX, posY, completed, project_id, user_id, color) VALUES (?, ?, ?, ?, ?, ?, ?)",  // Added color to INSERT
-    [title, posX || 0, posY || 0, completed || 0, project_id, req.session.user.id, color || '#ffffff'],  // Added color with default
-    function (err) {
-      if (err) return res.status(400).json({ error: err.message });
-      res.json({ id: this.lastID });
-    }
-  );
+  const { title, posX, posY, completed, project_id, color } = req.body;
+
+  try {
+    const stmt = db.prepare(`
+      INSERT INTO tasks 
+        (title, posX, posY, completed, project_id, user_id, color) 
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    const info = stmt.run(
+      title,
+      posX,
+      posY,
+      completed,
+      project_id,
+      req.session.user.id,
+      color || '#ffffff'
+    );
+
+    res.json({ id: info.lastInsertRowid });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.put('/api/tasks/:id', isAuthenticated, (req, res) => {
@@ -395,21 +432,33 @@ app.get('/api/dependencies', isAuthenticated, (req, res) => {
 
 app.post('/api/dependencies', isAuthenticated, (req, res) => {
   const { from_task, to_task, project_id } = req.body;
-  db.run(
-    "INSERT INTO dependencies (from_task, to_task, project_id, user_id) VALUES (?, ?, ?, ?)",
-    [from_task, to_task, project_id, req.session.user.id],
-    function (err) {
-      if (err) return res.status(400).json({ error: err.message });
-      res.json({ id: this.lastID });
-    }
-  );
+  try {
+    // Run the insert and grab the generated row id
+    const info = db.prepare(`
+      INSERT INTO dependencies
+        (from_task, to_task, project_id, user_id)
+      VALUES
+        (?, ?, ?, ?)
+    `).run(
+      from_task,
+      to_task,
+      project_id,
+      req.session.user.id
+    );
+    res.json({ id: info.lastInsertRowid });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.delete('/api/dependencies/:id', isAuthenticated, (req, res) => {
-  db.run("DELETE FROM dependencies WHERE id = ? AND user_id = ?", [req.params.id, req.session.user.id], function (err) {
-    if (err) return res.status(400).json({ error: err.message });
-    res.json({ changes: this.changes });
-  });
+  try
+  {
+    const info = db.prepare("DELETE FROM dependencies WHERE id = ? AND user_id = ?").run(req.params.id, req.session.user.id);
+    res.json({ changes: info.changes });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // Update the generativeEdit function signature to accept chatHistory
@@ -626,16 +675,6 @@ app.post('/api/log-error', express.json(), (req, res) => {
   const { message, stack, componentStack, url, userAgent, timestamp } = req.body;
   res.sendStatus(204);
 });
-
-// 1) Helper to turn db.run into a Promise that resolves with lastID
-function runAsync(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
-      if (err) return reject(err);
-      resolve(this.lastID);
-    });
-  });
-}
 
 // --- BULK CHANGE ENDPOINT (Authenticated) ---
 app.post('/api/bulk-change', isAuthenticated, (req, res) => {

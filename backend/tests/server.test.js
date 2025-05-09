@@ -1,6 +1,8 @@
 // server.test.js
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
+import BetterSqlite3 from 'better-sqlite3';
+
 
 // --- Configuration ---
 const TEST_DB_PATH = ':memory:'; // Use in-memory database
@@ -313,7 +315,7 @@ describe('Express Server API Tests', () => {
             await registerUser('duplicate', 'password');
             const res = await registerUser('duplicate', 'password');
             expect(res.status).toBe(400);
-            expect(res.body.error).toContain('UNIQUE constraint failed: users.username');
+            expect(res.body.error).toContain('SQLITE_CONSTRAINT_UNIQUE');
         });
 
         // Simulate bcrypt error during registration (harder to mock reliably without deeper hooks)
@@ -321,6 +323,8 @@ describe('Express Server API Tests', () => {
 
         it('POST /api/login - should log in an existing user', async () => {
             // testuser created in beforeEach
+            // Make sure to log out the agent first
+            await agent.post('/api/logout');
             const res = await agent.post('/api/login').send({ username: 'testuser', password: 'password' });
             expect(res.status).toBe(200);
             expect(res.body).toHaveProperty('id', testUser.id);
@@ -417,8 +421,10 @@ describe('Express Server API Tests', () => {
             // Re-login might be needed if premium status isn't refreshed in session automatically
             // In this setup, login reads premium status, so we need to re-login
             await loginUser('testuser', 'password');
+            const payload = { user_input: 'test', project_id: testProject.id };
+            console.log(payload);
+            const res = await agent.post('/api/generate').send(payload);
 
-            const res = await agent.post('/api/generate').send({ user_input: 'test', project_id: testProject.id });
             // Expect success (or whatever the generate endpoint returns on success)
             // Since OpenAI is mocked, we expect 200
             expect(res.status).toBe(200);
@@ -434,6 +440,7 @@ describe('Express Server API Tests', () => {
     describe('Project Endpoints (Authenticated)', () => {
         it('POST /api/projects - should create a new project', async () => {
             const res = await agent.post('/api/projects').send({ name: 'My New Project' });
+            console.log(res.body);
             expect(res.status).toBe(200);
             expect(res.body).toHaveProperty('id');
             expect(res.body).toHaveProperty('name', 'My New Project');

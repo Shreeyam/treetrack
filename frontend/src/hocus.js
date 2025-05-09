@@ -136,7 +136,6 @@ export const initializeHocusProvider = (projectId, user) => {
     provider,
     tasks,
     dependencies,
-    selections,
     addTask,
     updateTask,
     deleteTask,

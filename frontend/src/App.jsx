@@ -3,14 +3,14 @@ import { ReactFlowProvider, applyNodeChanges, addEdge, applyEdgeChanges } from '
 import '@xyflow/react/dist/style.css';
 import '@/globals.css';
 import "@/App.css";
-import "@/hocus.js";
+import { initializeHocusProvider } from "@/hocus.js";
 import * as dagre from 'dagre';
 import blendColors from './utils/colors';
 import AuthForm from '@/components/auth/AuthForm';
 import TopBar from '@/components/navigation/TopBar';
 import FlowArea from '@/components/flow/FlowArea';
 import { nodeStyles } from '@/components/flow/styles';
-import { fetchUser, fetchProjects, createProject, deleteProject, fetchTasksAndEdges, updateTask, deleteTask, deleteDependency } from './api';
+import { fetchUser, fetchProjects, createProject, deleteProject } from './api';
 import ChatBot from './components/misc/chatbot';
 import ChecksumIndicator from './components/misc/ChecksumIndicator';
 import { createAddNewNode, mapWithChangeDetection } from './utils/nodeFunctions';
@@ -57,6 +57,7 @@ function App({user, setUser}) {
     const [deleteSubtreeDialog, setDeleteSubtreeDialog] = useState(false);
     const [nodeToDeleteSubtree, setNodeToDeleteSubtree] = useState(null);
     const [createProjectDialog, setCreateProjectDialog] = useState(false);
+    const [yjsHandler, setYjsHandler] = useState(null);
 
     // React Flow
     const reactFlowWrapper = useRef(null);
@@ -65,6 +66,7 @@ function App({user, setUser}) {
     const nodesRef = useRef(nodes);
     const edgesRef = useRef(edges);
     const currentProjectRef = useRef(currentProject);
+    const yjsHandlerRef = useRef(null);
 
     const navigate = useNavigate(); // Use useNavigate from react-router
 
@@ -81,6 +83,41 @@ function App({user, setUser}) {
     useEffect(() => {
         currentProjectRef.current = currentProject;
     }, [currentProject]);
+    
+    useEffect(() => {
+        yjsHandlerRef.current = yjsHandler;
+    }, [yjsHandler]);
+
+    // --- Node Management ---
+    const createNodeStyle = useCallback((color, completed, selected, draft) => {
+        const backgroundColor = completed ? memoBlendColors(color, '#e0e0e0', 0.5) : color;
+
+        // Base style for the node
+        let style = {
+            ...nodeStyles,
+            backgroundColor,
+            color: completed ? '#888' : 'inherit',
+            outline: selected ? '2px solid blue' : '1px solid #ccc',
+        };
+
+        // If the node is a draft, overlay animated diagonal stripes
+        if (draft) {
+            style = {
+                ...style,
+                backgroundImage: `repeating-linear-gradient(
+                    45deg,
+                    rgba(0, 0, 0, 0.1),
+                    rgba(0, 0, 0, 0.1) 10px,
+                    transparent 10px,
+                    transparent 20px
+                )`,
+                backgroundSize: '57px 57px',
+                animation: 'draftAnimation 3s linear infinite',
+            };
+        }
+
+        return style;
+    }, [blendColors, memoBlendColors]);
 
     // --- Session Management ---
     useEffect(() => {
@@ -88,8 +125,6 @@ function App({user, setUser}) {
             .then(data => {
                 if (data.user) {
                     setUser(data.user);
-                    // Replaced alert(data) with a more descriptive message
-                    
                 }
                 else { navigate('/login'); } // Redirect to login if no user data
             })
@@ -124,36 +159,72 @@ function App({user, setUser}) {
         }
     }, [user]);
 
+    // Modified to initialize Yjs provider when project changes
+    const fetchTasksAndEdges = useCallback(async (projectId) => {
+        if (!projectId || !user) return;
+        
+        console.log(`Initializing Yjs for project: ${projectId}`);
+        
+        // Clean up previous provider if exists
+        if (yjsHandlerRef.current && yjsHandlerRef.current.provider) {
+            console.log("Destroying previous Yjs provider");
+            yjsHandlerRef.current.provider.destroy();
+        }
+        
+        // Initialize new provider for this project
+        const handler = initializeHocusProvider(projectId, user);
+        setYjsHandler(handler);
+        
+        // Get initial data from the Yjs document
+        const { nodes: flowNodes, edges: flowEdges } = handler.getReactFlowData();
+        
+        // Convert to React Flow format with proper styling
+        const formattedNodes = flowNodes.map(node => ({
+            ...node,
+            style: createNodeStyle(node.data.color || '#ffffff', node.data.completed),
+            sourcePosition: 'right',
+            targetPosition: 'left'
+        }));
+        
+        // Set nodes and edges in React Flow
+        setNodes(formattedNodes);
+        setEdges(flowEdges);
+        
+        // Set up Yjs document observation for real-time updates
+        const tasksObserver = () => {
+            const { nodes: updatedNodes, edges: updatedEdges } = handler.getReactFlowData();
+            
+            const formattedNodes = updatedNodes.map(node => ({
+                ...node,
+                style: createNodeStyle(node.data.color || '#ffffff', node.data.completed),
+                sourcePosition: 'right',
+                targetPosition: 'left'
+            }));
+            
+            setNodes(formattedNodes);
+            setEdges(updatedEdges);
+        };
+        
+        // Observe changes in the Yjs document
+        handler.tasks.observe(tasksObserver);
+        handler.dependencies.observe(tasksObserver);
+        
+        return { handler };
+    }, [user, createNodeStyle]);
+    
     useEffect(() => {
-        if (currentProject && user && user.id) { // Only fetch data if we have a valid user and project
-            fetchTasksAndEdges(currentProject)
-                .then(({ tasks, dependencies }) => {
-                    const newNodes = tasks.map(task => ({
-                        id: task.id.toString(),
-                        data: { label: task.title, completed: task.completed === 1, color: task.color || '#ffffff' },
-                        position: { x: task.posX, y: task.posY },
-                        style: createNodeStyle(task.color || '#ffffff', task.completed === 1),
-                        sourcePosition: 'right',
-                        targetPosition: 'left'
-                    }));
-
-                    const newEdges = dependencies.map(dep => ({
-                        id: dep.id.toString(),
-                        source: dep.from_task.toString(),
-                        target: dep.to_task.toString(),
-                        markerEnd: { type: 'arrowclosed' }
-                    }));
-
-                    setNodes(newNodes);
-                    setEdges(newEdges);
-                })
-                .catch(err => console.error(err));
-
+        if (currentProject && user && user.id) {
+            fetchTasksAndEdges(currentProject);
             localStorage.setItem('currentProject', currentProject);
         }
-    }, [currentProject]); // Remove user from dependencies, only react to project changes
+    }, [currentProject, user, fetchTasksAndEdges]);
 
     const handleLogout = useCallback(() => {
+        // Clean up Yjs provider before logout
+        if (yjsHandlerRef.current && yjsHandlerRef.current.provider) {
+            yjsHandlerRef.current.provider.destroy();
+        }
+        
         fetch('/api/logout', { method: 'POST', credentials: 'include' })
             .then(() => {
                 setUser(null);
@@ -228,36 +299,6 @@ function App({user, setUser}) {
     }, []);
 
     // --- Node Management ---
-    const createNodeStyle = useCallback((color, completed, selected, draft) => {
-        const backgroundColor = completed ? memoBlendColors(color, '#e0e0e0', 0.5) : color;
-
-        // Base style for the node
-        let style = {
-            ...nodeStyles,
-            backgroundColor,
-            color: completed ? '#888' : 'inherit',
-            outline: selected ? '2px solid blue' : '1px solid #ccc',
-        };
-
-        // If the node is a draft, overlay animated diagonal stripes
-        if (draft) {
-            style = {
-                ...style,
-                backgroundImage: `repeating-linear-gradient(
-                    45deg,
-                    rgba(0, 0, 0, 0.1),
-                    rgba(0, 0, 0, 0.1) 10px,
-                    transparent 10px,
-                    transparent 20px
-                )`,
-                backgroundSize: '57px 57px',
-                animation: 'draftAnimation 3s linear infinite',
-            };
-        }
-
-        return style;
-    }, [blendColors, memoBlendColors]);
-
     const onNodesChange = useCallback(
         (changes) =>
             setNodes((prev) => {
@@ -308,14 +349,15 @@ function App({user, setUser}) {
                 const latest = nodesRef.current.find(n => n.id === node.id);
                 if (!latest || latest.draft) return;   // ignore missing or AI-draft nodes
 
-                updateTask(latest.id, {
-                    title: latest.data.label,
-                    posX: latest.position.x,
-                    posY: latest.position.y,
-                    completed: latest.data.completed ? 1 : 0,
-                    color: latest.data.color,
-                    project_id: parseInt(currentProjectRef.current)
-                });
+                if (yjsHandlerRef.current) {
+                    yjsHandlerRef.current.updateTask(latest.id, {
+                        title: latest.data.label,
+                        posX: latest.position.x,
+                        posY: latest.position.y,
+                        completed: latest.data.completed,
+                        color: latest.data.color
+                    });
+                }
             });
         },
         []  // No dependencies needed as we're using refs for current state
@@ -336,7 +378,8 @@ function App({user, setUser}) {
             setLastNodePosition, 
             setNewTaskTitle, 
             setNodes,
-            position
+            position,
+            yjs: yjsHandlerRef.current // Pass Yjs handler to node creation function
         })(),
         [newTaskTitle, currentProject, reactFlowInstance, reactFlowWrapper, lastNodePosition, cascadeCount, cascadeStartPoint, createNodeStyle]
     );
@@ -348,40 +391,34 @@ function App({user, setUser}) {
 
             // Handle edge deletion from the context menu
             changes.forEach(change => {
-                if (change.type === 'remove') {
-                    deleteDependency(change.id);
+                if (change.type === 'remove' && yjsHandlerRef.current) {
+                    yjsHandlerRef.current.deleteDependency(change.id);
                 }
             });
         },
-        [] // No dependencies needed as deleteDependency is stable
+        [] // No dependencies needed as we're using refs
     );
 
     const onConnect = useCallback(
         (params) => {
-            const tempEdgeId = `e${params.source}-${params.target}`;
-            const newEdge = { ...params, id: tempEdgeId, markerEnd: { type: 'arrowclosed' } };
+            if (!yjsHandlerRef.current) {
+                console.error("Yjs handler not available");
+                return;
+            }
+            
+            // Use Yjs to add dependency
+            const edgeId = yjsHandlerRef.current.addDependency(params.source, params.target);
+            
+            // Add edge to React Flow with the ID from Yjs
+            const newEdge = { 
+                ...params, 
+                id: edgeId, 
+                markerEnd: { type: 'arrowclosed' } 
+            };
+            
             setEdges((eds) => addEdge(newEdge, eds));
-
-            fetch('/api/dependencies', {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    from_task: parseInt(params.source),
-                    to_task: parseInt(params.target),
-                    project_id: parseInt(currentProject)
-                })
-            })
-                .then(res => res.json())
-                .then(data => {
-                    setEdges((prevEdges) =>
-                        prevEdges.map(e =>
-                            e.id === tempEdgeId ? { ...e, id: data.id.toString() } : e
-                        )
-                    );
-                });
         },
-        [currentProject]
+        [] // No dependencies needed as we're using refs
     );
 
     // --- Node Interaction Handlers ---
@@ -396,9 +433,10 @@ function App({user, setUser}) {
                     setSelectedUnlinkSource(node);
                 } else if (selectedUnlinkSource.id !== node.id) {
                     const edge = edges.find(e => e.source === selectedUnlinkSource.id && e.target === node.id);
-                    if (edge) {
+                    if (edge && yjsHandlerRef.current) {
                         setEdges((eds) => eds.filter(e => e.id !== edge.id));
-                        deleteDependency(edge.id);
+                        // Use Yjs to delete dependency
+                        yjsHandlerRef.current.deleteDependency(edge.id);
                     }
                     setUnlinkHighlight({ source: selectedUnlinkSource.id, target: node.id });
                     setSelectedUnlinkSource(null);
@@ -423,7 +461,11 @@ function App({user, setUser}) {
     );
 
     const handleToggleCompleted = useCallback((node) => {
+        if (!yjsHandlerRef.current) return;
+        
         const updatedCompleted = !node.data.completed;
+        
+        // Update React state
         setNodes(prev =>
             prev.map(n =>
                 n.id === node.id
@@ -436,17 +478,20 @@ function App({user, setUser}) {
             )
         );
 
-        updateTask(node.id, {
+        // Update Yjs document
+        yjsHandlerRef.current.updateTask(node.id, {
             title: node.data.label,
             posX: node.position.x,
             posY: node.position.y,
-            completed: updatedCompleted ? 1 : 0,
-            color: node.data.color,
-            project_id: parseInt(currentProject)
+            completed: updatedCompleted,
+            color: node.data.color
         });
-    }, [currentProject, createNodeStyle]);
+    }, [createNodeStyle]);
 
     const handleUpdateNodeColor = useCallback((node, color) => {
+        if (!yjsHandlerRef.current) return;
+        
+        // Update React state
         setNodes(prev =>
             prev.map(n =>
                 n.id === node.id
@@ -459,15 +504,15 @@ function App({user, setUser}) {
             )
         );
 
-        updateTask(node.id, {
+        // Update Yjs document
+        yjsHandlerRef.current.updateTask(node.id, {
             title: node.data.label,
             posX: node.position.x,
             posY: node.position.y,
-            completed: node.data.completed ? 1 : 0,
-            color,
-            project_id: parseInt(currentProject)
+            completed: node.data.completed,
+            color
         });
-    }, [currentProject, createNodeStyle]);
+    }, [createNodeStyle]);
 
     const handleEditNode = useCallback((node) => {
         setNodeToEdit(node);
@@ -475,23 +520,24 @@ function App({user, setUser}) {
     }, []);
 
     const handleEditSubmit = useCallback((newTitle) => {
-        if (newTitle && newTitle.trim() && nodeToEdit) {
+        if (newTitle && newTitle.trim() && nodeToEdit && yjsHandlerRef.current) {
+            // Update React state
             setNodes(prev =>
                 prev.map(n => n.id === nodeToEdit.id ? { ...n, data: { ...n.data, label: newTitle } } : n)
             );
 
-            updateTask(nodeToEdit.id, {
+            // Update Yjs document
+            yjsHandlerRef.current.updateTask(nodeToEdit.id, {
                 title: newTitle,
                 posX: nodeToEdit.position.x,
                 posY: nodeToEdit.position.y,
                 color: nodeToEdit.data.color,
-                completed: nodeToEdit.data.completed ? 1 : 0,
-                project_id: parseInt(currentProject)
+                completed: nodeToEdit.data.completed
             });
         }
         setEditDialogOpen(false);
         setNodeToEdit(null);
-    }, [nodeToEdit, currentProject]);
+    }, [nodeToEdit]);
 
     const handleCancelEdit = useCallback(() => {
         setEditDialogOpen(false);
@@ -499,7 +545,12 @@ function App({user, setUser}) {
     }, []);
 
     const handleDeleteNode = useCallback((node) => {
-        deleteTask(node.id);
+        if (!yjsHandlerRef.current) return;
+        
+        // Delete from Yjs document
+        yjsHandlerRef.current.deleteTask(node.id);
+        
+        // Update React state
         setNodes(prev => prev.filter(n => n.id !== node.id));
         setEdges(prev => prev.filter(e => e.source !== node.id && e.target !== node.id));
     }, []);
@@ -510,7 +561,7 @@ function App({user, setUser}) {
     }, []);
 
     const handleConfirmDeleteSubtree = useCallback(() => {
-        if (!nodeToDeleteSubtree) return;
+        if (!nodeToDeleteSubtree || !yjsHandlerRef.current) return;
         
         const toDelete = new Set();
         const dfs = (nodeId) => {
@@ -519,9 +570,13 @@ function App({user, setUser}) {
             edges.filter(e => e.source === nodeId).forEach(e => dfs(e.target));
         };
         dfs(nodeToDeleteSubtree.id);
+        
+        // Delete tasks from Yjs document
         toDelete.forEach(nodeId => {
-            deleteTask(nodeId);
+            yjsHandlerRef.current.deleteTask(nodeId);
         });
+        
+        // Update React state
         setNodes(prev => prev.filter(n => !toDelete.has(n.id)));
         setEdges(prev => prev.filter(e => !toDelete.has(e.source) && !toDelete.has(e.target)));
         
@@ -927,13 +982,12 @@ function App({user, setUser}) {
         setNodes(newNodes);
         newNodes.forEach(node => {
             !node.data.draft &&
-                updateTask(node.id, {
+                yjsHandlerRef.current.updateTask(node.id, {
                     title: node.data.label,
                     posX: node.position.x,
                     posY: node.position.y,
                     color: node.data.color,
-                    completed: node.data.completed ? 1 : 0,
-                    project_id: parseInt(currentProject)
+                    completed: node.data.completed
                 });
         });
     }, []);

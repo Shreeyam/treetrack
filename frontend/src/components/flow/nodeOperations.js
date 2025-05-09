@@ -34,6 +34,7 @@ export const createNodeStyle = (color, completed, selected, draft) => {
     return style;
 };
 
+// This function now takes yjs as a parameter to use the Yjs document operations
 export const addNewNode = (
     newTaskTitle,
     reactFlowInstance,
@@ -45,7 +46,8 @@ export const addNewNode = (
     setCascadeStartPoint,
     setNodes,
     setLastNodePosition,
-    setNewTaskTitle
+    setNewTaskTitle,
+    yjs // Add Yjs handler as parameter
 ) => {
     if (!newTaskTitle.trim() || !reactFlowInstance || !reactFlowWrapper.current) return;
 
@@ -89,35 +91,37 @@ export const addNewNode = (
         setCascadeCount(1);
     }
 
+    // Create new task data
     const newTask = {
         title: newTaskTitle,
         posX: newPosition.x,
         posY: newPosition.y,
-        completed: 0,
-        project_id: parseInt(currentProject, 10),
+        completed: false,
         color: '#ffffff'
     };
 
-    fetch('/api/tasks', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newTask)
-    })
-        .then(res => res.json())
-        .then(json => {
-            const newNode = {
-                id: json.id.toString(),
-                data: { label: newTaskTitle, completed: false, color: '' },
-                position: newPosition,
-                style: createNodeStyle('#ffffff', false),
-                sourcePosition: 'right',
-                targetPosition: 'left'
-            };
-            setNodes(prev => [...prev, newNode]);
-            setNewTaskTitle('');
-            setLastNodePosition(newPosition);
-        });
+    // Use the Yjs document to add a task instead of REST API
+    if (!yjs || !yjs.addTask) {
+        console.error('Yjs handler not available or missing addTask method');
+        return;
+    }
+
+    // Add task to Yjs document and get the generated ID
+    const newTaskId = yjs.addTask(newTask);
+    
+    // Create a node with the ID from Yjs
+    const newNode = {
+        id: newTaskId,
+        data: { label: newTaskTitle, completed: false, color: '#ffffff' },
+        position: newPosition,
+        style: createNodeStyle('#ffffff', false),
+        sourcePosition: 'right',
+        targetPosition: 'left'
+    };
+    
+    setNodes(prev => [...prev, newNode]);
+    setNewTaskTitle('');
+    setLastNodePosition(newPosition);
 };
 
 export const handleNodeClick = (
@@ -130,7 +134,7 @@ export const handleNodeClick = (
     setContextMenu,
     setSelectedUnlinkSource,
     setEdges,
-    deleteDependency,
+    yjs, // Replace deleteDependency param with yjs
     setUnlinkHighlight,
     setSelectedSource,
     onConnect
@@ -146,7 +150,13 @@ export const handleNodeClick = (
             const edge = edges.find(e => e.source === selectedUnlinkSource.id && e.target === node.id);
             if (edge) {
                 setEdges((eds) => eds.filter(e => e.id !== edge.id));
-                deleteDependency(edge.id);
+                
+                // Use Yjs document to delete dependency
+                if (yjs && yjs.deleteDependency) {
+                    yjs.deleteDependency(edge.id);
+                } else {
+                    console.error('Yjs handler not available or missing deleteDependency method');
+                }
             }
             setUnlinkHighlight({ source: selectedUnlinkSource.id, target: node.id });
             setSelectedUnlinkSource(null);
@@ -159,16 +169,33 @@ export const handleNodeClick = (
         if (!selectedSource) {
             setSelectedSource(node);
         } else if (selectedSource.id !== node.id) {
-            onConnect({
-                source: selectedSource.id,
-                target: node.id
-            });
+            // Use Yjs document to add a dependency
+            if (yjs && yjs.addDependency) {
+                const edgeId = yjs.addDependency(selectedSource.id, node.id);
+                
+                // Update edges in React state
+                const connection = {
+                    id: edgeId,
+                    source: selectedSource.id,
+                    target: node.id,
+                    markerEnd: { type: 'arrowclosed' }
+                };
+                
+                setEdges(eds => [...eds, connection]);
+            } else {
+                // Fallback to the old method if Yjs is not available
+                onConnect({
+                    source: selectedSource.id,
+                    target: node.id
+                });
+            }
+            
             setSelectedSource(null);
         }
     }
 };
 
-export const handleToggleCompleted = (node, setNodes, updateTask, currentProject, createNodeStyle) => {
+export const handleToggleCompleted = (node, setNodes, yjs, createNodeStyle) => {
     const updatedCompleted = !node.data.completed;
     setNodes(prev =>
         prev.map(n =>
@@ -182,17 +209,21 @@ export const handleToggleCompleted = (node, setNodes, updateTask, currentProject
         )
     );
 
-    updateTask(node.id, {
-        title: node.data.label,
-        posX: node.position.x,
-        posY: node.position.y,
-        completed: updatedCompleted ? 1 : 0,
-        color: node.data.color,
-        project_id: parseInt(currentProject)
-    });
+    // Use Yjs document to update task
+    if (yjs && yjs.updateTask) {
+        yjs.updateTask(node.id, {
+            title: node.data.label,
+            posX: node.position.x,
+            posY: node.position.y,
+            completed: updatedCompleted,
+            color: node.data.color
+        });
+    } else {
+        console.error('Yjs handler not available or missing updateTask method');
+    }
 };
 
-export const handleUpdateNodeColor = (node, color, setNodes, updateTask, currentProject, createNodeStyle) => {
+export const handleUpdateNodeColor = (node, color, setNodes, yjs, createNodeStyle) => {
     setNodes(prev =>
         prev.map(n =>
             n.id === node.id
@@ -205,41 +236,55 @@ export const handleUpdateNodeColor = (node, color, setNodes, updateTask, current
         )
     );
 
-    updateTask(node.id, {
-        title: node.data.label,
-        posX: node.position.x,
-        posY: node.position.y,
-        completed: node.data.completed ? 1 : 0,
-        color,
-        project_id: parseInt(currentProject)
-    });
+    // Use Yjs document to update task color
+    if (yjs && yjs.updateTask) {
+        yjs.updateTask(node.id, {
+            title: node.data.label,
+            posX: node.position.x,
+            posY: node.position.y,
+            completed: node.data.completed,
+            color
+        });
+    } else {
+        console.error('Yjs handler not available or missing updateTask method');
+    }
 };
 
-export const handleEditNode = (node, setNodes, updateTask, currentProject) => {
+export const handleEditNode = (node, setNodes, yjs) => {
     const newTitle = prompt('Edit task title', node.data.label);
     if (newTitle && newTitle.trim()) {
         setNodes(prev =>
             prev.map(n => n.id === node.id ? { ...n, data: { ...n.data, label: newTitle } } : n)
         );
 
-        updateTask(node.id, {
-            title: newTitle,
-            posX: node.position.x,
-            posY: node.position.y,
-            color: node.data.color,
-            completed: node.data.completed ? 1 : 0,
-            project_id: parseInt(currentProject)
-        });
+        // Use Yjs document to update task title
+        if (yjs && yjs.updateTask) {
+            yjs.updateTask(node.id, {
+                title: newTitle,
+                posX: node.position.x,
+                posY: node.position.y,
+                color: node.data.color,
+                completed: node.data.completed
+            });
+        } else {
+            console.error('Yjs handler not available or missing updateTask method');
+        }
     }
 };
 
-export const handleDeleteNode = (node, setNodes, setEdges, deleteTask) => {
-    deleteTask(node.id);
+export const handleDeleteNode = (node, setNodes, setEdges, yjs) => {
+    // Use Yjs document to delete task
+    if (yjs && yjs.deleteTask) {
+        yjs.deleteTask(node.id);
+    } else {
+        console.error('Yjs handler not available or missing deleteTask method');
+    }
+    
     setNodes(prev => prev.filter(n => n.id !== node.id));
     setEdges(prev => prev.filter(e => e.source !== node.id && e.target !== node.id));
 };
 
-export const handleDeleteSubtree = (node, edges, setNodes, setEdges, deleteTask) => {
+export const handleDeleteSubtree = (node, edges, setNodes, setEdges, yjs) => {
     const toDelete = new Set();
     const dfs = (nodeId) => {
         if (toDelete.has(nodeId)) return;
@@ -247,9 +292,16 @@ export const handleDeleteSubtree = (node, edges, setNodes, setEdges, deleteTask)
         edges.filter(e => e.source === nodeId).forEach(e => dfs(e.target));
     };
     dfs(node.id);
-    toDelete.forEach(nodeId => {
-        deleteTask(nodeId);
-    });
+    
+    // Use Yjs document to delete tasks
+    if (yjs && yjs.deleteTask) {
+        toDelete.forEach(nodeId => {
+            yjs.deleteTask(nodeId);
+        });
+    } else {
+        console.error('Yjs handler not available or missing deleteTask method');
+    }
+    
     setNodes(prev => prev.filter(n => !toDelete.has(n.id)));
     setEdges(prev => prev.filter(e => !toDelete.has(e.source) && !toDelete.has(e.target)));
 };

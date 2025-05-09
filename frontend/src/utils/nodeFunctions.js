@@ -2,7 +2,7 @@
 
 import { v4 as uuidv4 } from 'uuid'
 
-// Helper to optimistically add a new node, then patch its ID when the server responds
+// Helper to add a new node using Yjs
 export function createAddNewNode({
     newTaskTitle,
     currentProject,
@@ -17,7 +17,8 @@ export function createAddNewNode({
     setLastNodePosition,
     setNewTaskTitle,
     setNodes,
-    position = null // Add optional position parameter
+    position = null, // Add optional position parameter
+    yjs = null // Add Yjs handler parameter
 }) {
     // Constants for cascading logic
     const CASCADE_OFFSET = 50;
@@ -97,53 +98,42 @@ export function createAddNewNode({
         }
 
         const taskTitle = newTaskTitle.trim() || 'New Task';
-        const tempId = `temp-${Date.now()}`;
-        const optimisticNode = {
-            id: tempId,
-            data: { label: taskTitle, completed: false, color: DEFAULT_COLOR },
+        
+        if (!yjs || !yjs.addTask) {
+            console.error('Yjs handler not available or missing addTask method');
+            return;
+        }
+
+        // Add task to Yjs document
+        const newTaskData = {
+            title: taskTitle,
+            posX: newPosition.x,
+            posY: newPosition.y, 
+            completed: false,
+            color: DEFAULT_COLOR
+        };
+        
+        // Add to Yjs document and get the generated ID
+        const newTaskId = yjs.addTask(newTaskData);
+        
+        // Create a node with the ID from Yjs
+        const newNode = {
+            id: newTaskId,
+            data: { 
+                label: taskTitle, 
+                completed: false, 
+                color: DEFAULT_COLOR 
+            },
             position: newPosition,
             style: createNodeStyle(DEFAULT_COLOR, false),
             sourcePosition: 'right',
             targetPosition: 'left'
         };
 
-        setNodes(nodes => [...nodes, optimisticNode]);
+        // Update React state
+        setNodes(nodes => [...nodes, newNode]);
         setNewTaskTitle('');
         setLastNodePosition(newPosition);
-
-
-        // --- send to server ---
-        const newTask = {
-            title: taskTitle,
-            posX: newPosition.x,
-            posY: newPosition.y,
-            completed: 0,
-            project_id: parseInt(currentProject, 10),
-            color: DEFAULT_COLOR
-        };
-
-        fetch('/api/tasks', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newTask)
-        })
-            .then(res => res.json())
-            .then(json => {
-                // replace tempId with real id
-                setNodes(nodes =>
-                    nodes.map(n =>
-                        n.id === tempId
-                            ? { ...n, id: json.id.toString() }
-                            : n
-                    )
-                );
-            })
-            .catch(err => {
-                console.error('Failed to create task:', err);
-                // roll back optimistic node
-                setNodes(nodes => nodes.filter(n => n.id !== tempId));
-            });
     };
 }
 

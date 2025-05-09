@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ReactFlowProvider, applyNodeChanges, addEdge, applyEdgeChanges } from '@xyflow/react';
+import { ReactFlowProvider, applyNodeChanges, addEdge, applyEdgeChanges, } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import '@/globals.css';
 import "@/App.css";
@@ -21,12 +21,6 @@ const MemoAuthForm = React.memo(AuthForm);
 const MemoTopBar = React.memo(TopBar);
 const MemoFlowArea = React.memo(FlowArea);
 
-// --- Constants for Cascading ---
-const CASCADE_OFFSET = 50;
-const VIEWPORT_START_OFFSET = { x: 50, y: 50 }; // Offset from viewport top-left
-const NODE_WIDTH = 150; // Approximate node width for bounds checking
-const NODE_HEIGHT = 50; // Approximate node height for bounds checking
-
 function App({ user, setUser }) {
     // --- Main App States ---
     const [projects, setProjects] = useState([]);
@@ -35,8 +29,7 @@ function App({ user, setUser }) {
     const [edges, setEdges] = useState([]);
     const [prevNodes, setPrevNodes] = useState([]);
     const [prevEdges, setPrevEdges] = useState([]);
-    const [selectedSource, setSelectedSource] = useState(null);
-    const [selectedUnlinkSource, setSelectedUnlinkSource] = useState(null);
+    const [linkHighlight, setLinkHighlight] = useState(null);
     const [unlinkHighlight, setUnlinkHighlight] = useState(null);
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [hideCompleted, setHideCompleted] = useState(() => localStorage.getItem('hideCompleted') === 'true');
@@ -358,33 +351,29 @@ function App({ user, setUser }) {
     const onConnect = useCallback(
         (params) => {
             // Check if the edge already exists
-            const existingEdge = edges.find(edge => edge.source === params.source && edge.target === params.target);
-            if (!existingEdge) {
             const tempEdgeId = `e${params.source}-${params.target}`;
             const newEdge = { ...params, id: tempEdgeId, markerEnd: { type: 'arrowclosed' } };
 
+            setEdges((eds) => addEdge(newEdge, eds));
 
-                setEdges((eds) => addEdge(newEdge, eds));
-
-                fetch('/api/dependencies', {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        from_task: parseInt(params.source),
-                        to_task: parseInt(params.target),
-                        project_id: parseInt(currentProject)
-                    })
+            fetch('/api/dependencies', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    from_task: parseInt(params.source),
+                    to_task: parseInt(params.target),
+                    project_id: parseInt(currentProject)
                 })
-                    .then(res => res.json())
-                    .then(data => {
-                        setEdges((prevEdges) =>
-                            prevEdges.map(e =>
-                                e.id === tempEdgeId ? { ...e, id: data.id.toString() } : e
-                            )
-                        );
-                    });
-            }
+            })
+                .then(res => res.json())
+                .then(data => {
+                    setEdges((prevEdges) =>
+                        prevEdges.map(e =>
+                            e.id === tempEdgeId ? { ...e, id: data.id.toString() } : e
+                        )
+                    );
+                });
         },
         [currentProject, edges]
     );
@@ -396,35 +385,58 @@ function App({ user, setUser }) {
                 setContextMenu({ visible: false, x: 0, y: 0, node: null });
             }
 
-            if ((event.ctrlKey || event.metaKey) && event.shiftKey) {
-                if (!selectedUnlinkSource) {
-                    setSelectedUnlinkSource(node);
-                } else if (selectedUnlinkSource.id !== node.id) {
-                    const edge = edges.find(e => e.source === selectedUnlinkSource.id && e.target === node.id);
+            if (event.shiftKey) {
+                // event.preventDefault();
+                // event.stopPropagation();
+                // If we don't have any selected nodes, select the clicked node and go into selection mode
+                const currentSelectedNodes = nodes.filter(n => n.selected);
+
+                if (currentSelectedNodes.length === 0) {
+                    setLinkHighlight({ source: node.id, target: null });
+                } else if (currentSelectedNodes.length === 1 || linkHighlight) {
+                    const sourceNode = currentSelectedNodes[0] || linkHighlight;
+
+                    // First, check if they are linked
+                    const edge = edges.find(e => e.source === sourceNode.id && e.target === node.id);
+
                     if (edge) {
                         setEdges((eds) => eds.filter(e => e.id !== edge.id));
                         deleteDependency(edge.id);
+                        setUnlinkHighlight({ source: sourceNode.id, target: node.id });
+                        setTimeout(() => setUnlinkHighlight(null) || setLinkHighlight(null), 500);
+                    } else {
+                        // Otherwise, link them!
+                        onConnect({
+                            source: sourceNode.id,
+                            target: node.id
+                        });
+                        console.log({ source: sourceNode.id, target: node.id });
+                        setLinkHighlight({ source: sourceNode.id, target: node.id });
+                        setTimeout(() => setLinkHighlight(null), 500);
                     }
-                    setUnlinkHighlight({ source: selectedUnlinkSource.id, target: node.id });
-                    setSelectedUnlinkSource(null);
-                    setTimeout(() => setUnlinkHighlight(null), 2000);
-                }
-                return;
-            }
 
-            if ((event.ctrlKey || event.metaKey) && !event.shiftKey) {
-                if (!selectedSource) {
-                    setSelectedSource(node);
-                } else if (selectedSource.id !== node.id) {
-                    onConnect({
-                        source: selectedSource.id,
-                        target: node.id
-                    });
-                    setSelectedSource(null);
+                    // Remove any selections    
+                    setNodes(nodes =>
+                        nodes.map(n => {
+                            if (!n.selected) return n;
+
+                            const cleared = { ...n, selected: false };
+                            return {
+                                ...cleared,
+                                style: createNodeStyle(
+                                    cleared.data.color,
+                                    cleared.data.completed,
+        /* selected */ false,
+                                    cleared.draft
+                                ),
+                            };
+                        }),
+                    );
                 }
+
             }
         },
-        [contextMenu, selectedSource, selectedUnlinkSource, edges, onConnect]
+        [nodes, contextMenu, linkHighlight, edges, onConnect]
     );
 
     const handleToggleCompleted = useCallback((node) => {
@@ -794,7 +806,6 @@ function App({ user, setUser }) {
         // Only send if there's something to change
         if (createdTasks.length === 0 && updatedTasks.length === 0 && deletedTaskIds.length === 0 &&
             createdDeps.length === 0 && updatedDeps.length === 0 && deletedDepIds.length === 0) {
-            console.log("No changes to accept.");
             // Reset history even if no changes were sent
             setPrevNodes([]);
             setPrevEdges([]);
@@ -987,6 +998,7 @@ function App({ user, setUser }) {
     const renderedNodes = useMemo(() => {
         // Derive selected nodes directly from the nodes state
         const currentSelectedNodes = nodes.filter(n => n.selected);
+        console.log(linkHighlight)
 
         return mapWithChangeDetection(visibleNodes, node => {
             // compute the one‑off style override
@@ -1001,21 +1013,22 @@ function App({ user, setUser }) {
                 e.target === currentSelectedNodes[0].id && e.source === node.id
             );
 
+
             if (
                 unlinkHighlight &&
                 (node.id === unlinkHighlight.source || node.id === unlinkHighlight.target)
             ) {
                 nextStyle = { ...nextStyle, outline: '2px solid red' };
-            } else if (selectedSource && selectedSource.id === node.id) {
+            } else if (linkHighlight && (linkHighlight.source == node.id || linkHighlight.target == node.id)) {
                 nextStyle = {
                     ...nextStyle,
                     backgroundColor: node.data.color || '#ffffff',
                     outline: '2px solid green',
                 };
             } else if (showUpDownstream && isDownstream) {
-                nextStyle = { ...nextStyle, outline: '2px solid #FFD700', boxShadow: '0 0 10px 1px #FFD700' }; // Yellow for downstream + glow
+                nextStyle = { ...nextStyle, outline: '2px solid #EB6424', boxShadow: '0 0 10px 1px #EB6424' }; // Yellow for downstream + glow
             } else if (showUpDownstream && isUpstream) {
-                nextStyle = { ...nextStyle, outline: '2px solid #9370DB', boxShadow: '0 0 10px 1px #9370DB' }; // Purple for upstream + glow
+                nextStyle = { ...nextStyle, outline: '2px solid #00B4D8', boxShadow: '0 0 10px 1px #00B4D8' }; // Purple for upstream + glow
             } else if (highlightNext) {
                 nextStyle = nextTaskIds.has(node.id)
                     ? { ...nextStyle, opacity: 1 }
@@ -1030,7 +1043,7 @@ function App({ user, setUser }) {
     }, [
         visibleNodes, // depends on nodes
         unlinkHighlight,
-        selectedSource,
+        linkHighlight,
         highlightNext,
         nextTaskIds, // depends on nodes
         edges,
@@ -1048,8 +1061,7 @@ function App({ user, setUser }) {
     }, []);
 
     const handlePaneClick = useCallback(() => {
-        setSelectedSource(null);
-        setSelectedUnlinkSource(null);
+        setLinkHighlight(null);
         setContextMenu({ visible: false, x: 0, y: 0, node: null });
     }, []);
 

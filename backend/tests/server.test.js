@@ -1,8 +1,8 @@
 // server.test.js
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
-import BetterSqlite3 from 'better-sqlite3';
-
+import sqlite3pkg from 'sqlite3';
+const sqlite3 = sqlite3pkg.verbose();
 
 // --- Configuration ---
 const TEST_DB_PATH = ':memory:'; // Use in-memory database

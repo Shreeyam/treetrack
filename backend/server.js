@@ -12,6 +12,11 @@ import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import 'dotenv/config';
 
+<<<<<<< HEAD
+=======
+
+// const openai = new OpenAI();
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
 const openai = new OpenAI({
   apiKey: process.env.GEMINI_API_KEY,
   baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -29,11 +34,21 @@ app.use(express.json());
 
 app.set('trust proxy', 1);
 
+<<<<<<< HEAD
 const db = new Database('./todos.db');
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
 const sessionDb = new Database('sessions.db');
+=======
+// Connect to our main SQLite DB.
+const db = new Database('./todos.db', { verbose: console.log });
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+
+// Configure sessions with a better-sqlite3 store.
+const sessionDb = new Database('sessions.db', { verbose: console.log });
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
 app.use(session({
   store: new SqliteStore({ client: sessionDb }),
   secret: crypto.randomBytes(64).toString('hex'),
@@ -42,6 +57,10 @@ app.use(session({
   cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, secure: process.env.NODE_ENV === 'production', domain: process.env.NODE_ENV === 'production' ? 'treetrack.xyz' : undefined }
 }));
 
+<<<<<<< HEAD
+=======
+// Initialize database schema
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
 db.prepare(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,6 +108,10 @@ db.prepare(`
   );
 `).run();
 
+<<<<<<< HEAD
+=======
+// Middleware to check for an authenticated user.
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
 function isAuthenticated(req, res, next) {
   if (req.session && req.session.user) {
     return next();
@@ -109,10 +132,15 @@ const loginLimiter = rateLimit({
   message: "Too many login attempts. Please try again later."
 });
 
+<<<<<<< HEAD
 // --- AUTH ENDPOINTS ---
 
 
 app.post('/api/register', async (req, res) => { 
+=======
+// Register a new user.
+app.post('/api/register', async (req, res) => { // Make handler async for bcrypt
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: "Missing username or password" });
@@ -121,13 +149,21 @@ app.post('/api/register', async (req, res) => {
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
 
+<<<<<<< HEAD
     const info = db.prepare(
       "INSERT INTO users (username, password) VALUES (?, ?)"
     ).run(username, hashedPassword); 
+=======
+    // Use synchronous .run() and get info object
+    const info = db.prepare(
+      "INSERT INTO users (username, password) VALUES (?, ?)"
+    ).run(username, hashedPassword); // Errors will throw here
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
 
     const newUser = {
       id: info.lastInsertRowid,
       username: username,
+<<<<<<< HEAD
       premium: 0 
     };
 
@@ -135,6 +171,16 @@ app.post('/api/register', async (req, res) => {
       id: newUser.id,
       username: newUser.username,
       premium: Boolean(newUser.premium) 
+=======
+      premium: 0 // Default premium status
+    };
+
+    // Automatically log in the new user by setting the session
+    req.session.user = {
+      id: newUser.id,
+      username: newUser.username,
+      premium: Boolean(newUser.premium) // Ensure boolean
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
     };
     console.log(`User ${newUser.username} registered. Session user set:`, req.session.user);
 
@@ -147,20 +193,32 @@ app.post('/api/register', async (req, res) => {
   } catch (error) {
     console.error("Registration error:", error);
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+<<<<<<< HEAD
       res.status(400).json({ error: error.code });
     } else {
       res.status(500).json({ error: error.code });
+=======
+      res.status(400).json({ error: error });
+    } else {
+      res.status(500).json({ error: error });
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
     }
   }
 });
 
+<<<<<<< HEAD
 app.post('/api/login', loginLimiter, async (req, res) => { 
+=======
+// Login endpoint.
+app.post('/api/login', loginLimiter, async (req, res) => { // Make handler async for bcrypt
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: "Missing username or password" });
   }
 
   try {
+<<<<<<< HEAD
     const user = db.prepare("SELECT id, username, password, premium FROM users WHERE username = ?").get(username);
 
     if (!user) {
@@ -176,16 +234,52 @@ app.post('/api/login', loginLimiter, async (req, res) => {
         premium: Boolean(user.premium)
       };
 
+=======
+    // Use synchronous .get() directly
+    const user = db.prepare("SELECT id, username, password, premium FROM users WHERE username = ?").get(username);
+
+    if (!user) {
+      // User not found
+      return res.status(400).json({ error: "Invalid credentials" });
+    }
+
+    // Use await for the async bcrypt comparison
+    const match = await bcrypt.compare(password, user.password);
+
+    if (match) {
+      // --- Login successful ---
+      // Set the session data *before* sending the response
+      req.session.user = {
+        id: user.id,
+        username: user.username,
+        premium: Boolean(user.premium) // Ensure it's a boolean
+      };
+
+      // Optional: Log to confirm session is set server-side
+      console.log(`User ${user.username} logged in. Session user set:`, req.session.user);
+
+      // Save the session explicitly if needed (though usually automatic on modification/response end)
+      // req.session.save(); // Usually not necessary unless ending response early without modification
+
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
       res.json({
         id: user.id,
         username: user.username,
         premium: Boolean(user.premium)
       });
     } else {
+<<<<<<< HEAD
+=======
+      // Password incorrect
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
       res.status(400).json({ error: "Invalid credentials" });
     }
 
   } catch (error) {
+<<<<<<< HEAD
+=======
+    // Handle potential synchronous DB errors or bcrypt errors
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
     console.error("Login error:", error);
     res.status(500).json({ error: "Server error during login process" });
   }
@@ -220,12 +314,17 @@ app.get('/api/projects', isAuthenticated, (req, res) => {
 app.post('/api/projects', isAuthenticated, (req, res) => {
   const { name } = req.body;
   try {
+<<<<<<< HEAD
     const stmt = db.prepare(
       `INSERT INTO projects (name, user_id)
        VALUES (?, ?)`
     );
     const info = stmt.run(name, req.session.user.id);
     res.json({ id: info.lastInsertRowid, name });
+=======
+    db.prepare("INSERT INTO projects (name, user_id) VALUES (?, ?)").run(name, req.session.user.id);
+    res.json({ id: this.lastID, name });
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -268,19 +367,34 @@ app.delete('/api/projects/:id', isAuthenticated, (req, res) => {
 
 app.get('/api/tasks', isAuthenticated, (req, res) => {
   const { project_id } = req.query;
+<<<<<<< HEAD
   const userId = req.session.user.id; 
+=======
+  const userId = req.session.user.id; // Get userId from session
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
 
   try {
     let query = "SELECT * FROM tasks WHERE user_id = ?";
     const params = [userId];
 
+<<<<<<< HEAD
     if (project_id !== undefined && project_id !== null) { 
+=======
+    if (project_id !== undefined && project_id !== null) { // Check if project_id exists
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
       query += " AND project_id = ?";
       params.push(project_id);
     }
 
+<<<<<<< HEAD
     const tasks = db.prepare(query).all(params);
 
+=======
+    // Prepare and execute synchronously
+    const tasks = db.prepare(query).all(params);
+
+    // Send the correct structure
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
     res.json({ tasks: tasks });
 
   } catch (error) {
@@ -293,6 +407,7 @@ app.get('/api/tasks', isAuthenticated, (req, res) => {
 app.post('/api/tasks', isAuthenticated, (req, res) => {
   const { title, posX = 0, posY = 0, completed, project_id, color } = req.body;
 
+<<<<<<< HEAD
   try {
     const stmt = db.prepare(`
       INSERT INTO tasks 
@@ -315,6 +430,8 @@ app.post('/api/tasks', isAuthenticated, (req, res) => {
   }
 });
 
+=======
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
 app.put('/api/tasks/:id', isAuthenticated, (req, res) => {
   const { title, posX, posY, completed, color, project_id } = req.body;
   try {
@@ -348,13 +465,23 @@ app.delete('/api/tasks/:id', isAuthenticated, (req, res) => {
   const taskId = req.params.id;
   const userId = req.session.user.id;
 
+<<<<<<< HEAD
   const deleteTaskAndDeps = db.transaction((taskId, userId) => {
+=======
+  // wrap both operations in a transaction
+  const deleteTaskAndDeps = db.transaction((taskId, userId) => {
+    // 1) delete any dependencies involving this task
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
     db.prepare(`
       DELETE FROM dependencies
       WHERE (from_task = ? OR to_task = ?)
         AND user_id = ?
     `).run(taskId, taskId, userId);
 
+<<<<<<< HEAD
+=======
+    // 2) delete the task itself
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
     return db.prepare(`
       DELETE FROM tasks
       WHERE id = ? AND user_id = ?
@@ -363,6 +490,10 @@ app.delete('/api/tasks/:id', isAuthenticated, (req, res) => {
 
   try {
     const result = deleteTaskAndDeps(taskId, userId);
+<<<<<<< HEAD
+=======
+    // result.changes is how many tasks rows were deleted
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
     res.json({ changes: result.changes });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -373,19 +504,34 @@ app.delete('/api/tasks/:id', isAuthenticated, (req, res) => {
 
 app.get('/api/dependencies', isAuthenticated, (req, res) => {
   const { project_id } = req.query;
+<<<<<<< HEAD
   const userId = req.session.user.id; 
+=======
+  const userId = req.session.user.id; // Get userId from session
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
 
   try {
     let query = "SELECT * FROM dependencies WHERE user_id = ?";
     const params = [userId];
 
+<<<<<<< HEAD
     if (project_id !== undefined && project_id !== null) { 
+=======
+    if (project_id !== undefined && project_id !== null) { // Check if project_id exists
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
       query += " AND project_id = ?";
       params.push(project_id);
     }
 
+<<<<<<< HEAD
     const dependencies = db.prepare(query).all(params);
 
+=======
+    // Prepare and execute synchronously
+    const dependencies = db.prepare(query).all(params);
+
+    // Send the correct structure
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
     res.json({ dependencies: dependencies });
 
   } catch (error) {
@@ -587,8 +733,13 @@ Be thoughtful and detailed. The goal is to create a structured blueprint of the 
       response_format: zodResponseFormat(ResponseSchema, "projectPlan"),
     });
 
+<<<<<<< HEAD
     // The response is already parsed into the correct structure
     const responseTasks = completion.choices[0].message.parsed;
+=======
+    // Check if the response is valid.
+
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
 
     // Ensure tasks and dependencies arrays exist even if AI omits them when no_changes_required is true
     responseTasks.tasks = responseTasks.tasks || [];
@@ -638,6 +789,19 @@ app.post('/api/log-error', express.json(), (req, res) => {
   res.sendStatus(204);
 });
 
+<<<<<<< HEAD
+=======
+// 1) Helper to turn db.run into a Promise that resolves with lastID
+function runAsync(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) {
+      if (err) return reject(err);
+      resolve(this.lastID);
+    });
+  });
+}
+
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d
 // --- BULK CHANGE ENDPOINT (Authenticated) ---
 app.post('/api/bulk-change', isAuthenticated, (req, res) => {
   const { project_id, tasks, dependencies } = req.body;
@@ -732,4 +896,8 @@ app.post('/api/bulk-change', isAuthenticated, (req, res) => {
 
 
 
+<<<<<<< HEAD
 export default app; // Export the app for testing purposes
+=======
+export default app; // Export the app for testing purposes     
+>>>>>>> 7ae78079470ed3711aad341bb881b06ec19f1b0d

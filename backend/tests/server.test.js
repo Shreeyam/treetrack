@@ -10,24 +10,37 @@ const TEST_SESSIONS_DB_PATH = ':memory:'; // Use in-memory database for sessions
 
 // --- Mocking ---
 // Mock OpenAI before importing the app
-// 1. Define the core mock function for the AI call
-const mockCreateCompletion = vi.fn().mockResolvedValue({ // Default success response
+const mockParseCompletion = vi.fn().mockResolvedValue({
     choices: [{
         message: {
-            content: JSON.stringify({
-                tasks: [{ id: -1, title: "Mock Task", posX: 0, posY: 0, completed: 0, project_id: 0, user_id: 0, color: "#aabbcc", locked: 0, draft: 1 }],
+            // .parsed is what your code does: `completion.choices[0].message.parsed`
+            parsed: {
+                tasks: [{
+                    id: -1,
+                    title: "Mock Task",
+                    posX: 0,
+                    posY: 0,
+                    completed: 0,
+                    project_id: 0,
+                    user_id: 0,
+                    color: "#aabbcc",
+                    locked: 0,
+                    draft: 1
+                }],
                 dependencies: [],
                 summary: "Mocked AI summary."
-            })
+            }
         }
     }]
 });
 
-// 2. Create the structure the OpenAI instance expects
+// 2. Expose that on beta.chat.completions.parse
 const mockOpenAIInstance = {
-    chat: {
-        completions: {
-            create: mockCreateCompletion // Use the mock function here
+    beta: {
+        chat: {
+            completions: {
+                parse: mockParseCompletion
+            }
         }
     }
 };
@@ -421,7 +434,7 @@ describe('Express Server API Tests', () => {
             // Re-login might be needed if premium status isn't refreshed in session automatically
             // In this setup, login reads premium status, so we need to re-login
             await loginUser('testuser', 'password');
-            const payload = { user_input: 'test', project_id: testProject.id };
+            const payload = { user_input: 'test', project_id: testProject.id, chat_history: [] };
             console.log(payload);
             const res = await agent.post('/api/generate').send(payload);
 
@@ -854,9 +867,9 @@ describe('Express Server API Tests', () => {
         it('should generate project structure for premium user', async () => {
             const res = await premiumAgent.post('/api/generate').send({
                 user_input: 'Plan a vacation',
-                project_id: testProject.id // Assuming generate can add to existing project
+                project_id: testProject.id, // Assuming generate can add to existing project
+                chat_history: []
             });
-            console.log('Response:', res.body); // Log the response for debugging
             expect(res.status).toBe(200);
             expect(res.body).toHaveProperty('data');
             expect(res.body.data).toHaveProperty('tasks');
@@ -902,7 +915,7 @@ describe('Express Server API Tests', () => {
         it('should handle errors from the AI service', async () => {
             // Configure the mock to throw an error
             const openaiInstance = vi.mocked(await import('openai')).default(); // Get the mocked instance
-            vi.mocked(openaiInstance.chat.completions.create).mockRejectedValueOnce(new Error('AI API Error'));
+            vi.mocked(openaiInstance.beta.chat.completions.parse).mockRejectedValueOnce(new Error('AI API Error'));
 
             const res = await premiumAgent.post('/api/generate').send({
                 user_input: 'Plan something',

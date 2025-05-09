@@ -320,7 +320,7 @@ app.get('/api/tasks', isAuthenticated, (req, res) => {
 
 
 app.post('/api/tasks', isAuthenticated, (req, res) => {
-  const { title, posX, posY, completed, project_id, color } = req.body;
+  const { title, posX = 0, posY = 0, completed, project_id, color } = req.body;
 
   try {
     const stmt = db.prepare(`
@@ -462,7 +462,7 @@ app.delete('/api/dependencies/:id', isAuthenticated, (req, res) => {
 });
 
 // Update the generativeEdit function signature to accept chatHistory
-async function generativeEdit(userInput, projectId, userId, currentState, chatHistory) { // Added chatHistory parameter
+async function generativeEdit(userInput, projectId, userId, currentState, chatHistory) {
   // Define Zod schema that matches our JSON schema
   const TaskSchema = z.object({
     id: z.number(),
@@ -667,6 +667,7 @@ app.post('/api/generate', isAuthenticated, isPremium, async (req, res) => {
     const projectData = await generativeEdit(user_input, project_id, req.session.user.id, current_state, chat_history); // Pass chat_history
     res.json({ data: projectData });
   } catch (error) {
+    
     res.status(500).json({ error: "Failed to generate project structure" });
   }
 });

@@ -12,8 +12,6 @@ import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import 'dotenv/config';
 
-
-// const openai = new OpenAI();
 const openai = new OpenAI({
   apiKey: process.env.GEMINI_API_KEY,
   baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -31,13 +29,11 @@ app.use(express.json());
 
 app.set('trust proxy', 1);
 
-// Connect to our main SQLite DB.
-const db = new Database('./todos.db', { verbose: console.log });
+const db = new Database('./todos.db');
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
-// Configure sessions with a better-sqlite3 store.
-const sessionDb = new Database('sessions.db', { verbose: console.log });
+const sessionDb = new Database('sessions.db');
 app.use(session({
   store: new SqliteStore({ client: sessionDb }),
   secret: crypto.randomBytes(64).toString('hex'),
@@ -46,7 +42,6 @@ app.use(session({
   cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, secure: process.env.NODE_ENV === 'production', domain: process.env.NODE_ENV === 'production' ? 'treetrack.xyz' : undefined }
 }));
 
-// Initialize database schema
 db.prepare(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -94,7 +89,6 @@ db.prepare(`
   );
 `).run();
 
-// Middleware to check for an authenticated user.
 function isAuthenticated(req, res, next) {
   if (req.session && req.session.user) {
     return next();
@@ -102,7 +96,6 @@ function isAuthenticated(req, res, next) {
   return res.status(401).json({ error: "Not authenticated" });
 }
 
-// Middleware to check if the user is a premium user.
 function isPremium(req, res, next) {
   if (req.session && req.session.user && req.session.user.premium) {
     return next();
@@ -110,15 +103,16 @@ function isPremium(req, res, next) {
   return res.status(403).json({ error: "Premium access required" });
 }
 
-// Rate limiter for the login endpoint.
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 55,
   message: "Too many login attempts. Please try again later."
 });
 
-// Register a new user.
-app.post('/api/register', async (req, res) => { // Make handler async for bcrypt
+// --- AUTH ENDPOINTS ---
+
+
+app.post('/api/register', async (req, res) => { 
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: "Missing username or password" });
@@ -127,22 +121,20 @@ app.post('/api/register', async (req, res) => { // Make handler async for bcrypt
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Use synchronous .run() and get info object
     const info = db.prepare(
       "INSERT INTO users (username, password) VALUES (?, ?)"
-    ).run(username, hashedPassword); // Errors will throw here
+    ).run(username, hashedPassword); 
 
     const newUser = {
       id: info.lastInsertRowid,
       username: username,
-      premium: 0 // Default premium status
+      premium: 0 
     };
 
-    // Automatically log in the new user by setting the session
     req.session.user = {
       id: newUser.id,
       username: newUser.username,
-      premium: Boolean(newUser.premium) // Ensure boolean
+      premium: Boolean(newUser.premium) 
     };
     console.log(`User ${newUser.username} registered. Session user set:`, req.session.user);
 
@@ -162,39 +154,27 @@ app.post('/api/register', async (req, res) => { // Make handler async for bcrypt
   }
 });
 
-// Login endpoint.
-app.post('/api/login', loginLimiter, async (req, res) => { // Make handler async for bcrypt
+app.post('/api/login', loginLimiter, async (req, res) => { 
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: "Missing username or password" });
   }
 
   try {
-    // Use synchronous .get() directly
     const user = db.prepare("SELECT id, username, password, premium FROM users WHERE username = ?").get(username);
 
     if (!user) {
-      // User not found
       return res.status(400).json({ error: "Invalid credentials" });
     }
 
-    // Use await for the async bcrypt comparison
     const match = await bcrypt.compare(password, user.password);
 
     if (match) {
-      // --- Login successful ---
-      // Set the session data *before* sending the response
       req.session.user = {
         id: user.id,
         username: user.username,
-        premium: Boolean(user.premium) // Ensure it's a boolean
+        premium: Boolean(user.premium)
       };
-
-      // Optional: Log to confirm session is set server-side
-      console.log(`User ${user.username} logged in. Session user set:`, req.session.user);
-
-      // Save the session explicitly if needed (though usually automatic on modification/response end)
-      // req.session.save(); // Usually not necessary unless ending response early without modification
 
       res.json({
         id: user.id,
@@ -202,18 +182,15 @@ app.post('/api/login', loginLimiter, async (req, res) => { // Make handler async
         premium: Boolean(user.premium)
       });
     } else {
-      // Password incorrect
       res.status(400).json({ error: "Invalid credentials" });
     }
 
   } catch (error) {
-    // Handle potential synchronous DB errors or bcrypt errors
     console.error("Login error:", error);
     res.status(500).json({ error: "Server error during login process" });
   }
 });
 
-// Logout endpoint.
 app.post('/api/logout', (req, res) => {
   req.session.destroy((err) => {
     if (err) return res.status(500).json({ error: "Could not log out" });
@@ -221,7 +198,6 @@ app.post('/api/logout', (req, res) => {
   });
 });
 
-// Endpoint to get the current session's user.
 app.get('/api/me', (req, res) => {
   if (req.session && req.session.user) {
     res.json({ user: req.session.user });
@@ -249,8 +225,6 @@ app.post('/api/projects', isAuthenticated, (req, res) => {
        VALUES (?, ?)`
     );
     const info = stmt.run(name, req.session.user.id);
-
-    console.log(info.lastInsertRowid);
     res.json({ id: info.lastInsertRowid, name });
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -286,7 +260,6 @@ app.delete('/api/projects/:id', isAuthenticated, (req, res) => {
 
     res.json({ changes });
   } catch (err) {
-    // any throw inside the txn callback rolls back automatically
     res.status(400).json({ error: err.message });
   }
 });
@@ -295,21 +268,19 @@ app.delete('/api/projects/:id', isAuthenticated, (req, res) => {
 
 app.get('/api/tasks', isAuthenticated, (req, res) => {
   const { project_id } = req.query;
-  const userId = req.session.user.id; // Get userId from session
+  const userId = req.session.user.id; 
 
   try {
     let query = "SELECT * FROM tasks WHERE user_id = ?";
     const params = [userId];
 
-    if (project_id !== undefined && project_id !== null) { // Check if project_id exists
+    if (project_id !== undefined && project_id !== null) { 
       query += " AND project_id = ?";
       params.push(project_id);
     }
 
-    // Prepare and execute synchronously
     const tasks = db.prepare(query).all(params);
 
-    // Send the correct structure
     res.json({ tasks: tasks });
 
   } catch (error) {
@@ -373,21 +344,17 @@ app.put('/api/tasks/:id', isAuthenticated, (req, res) => {
   }
 });
 
-// When deleting a task, first delete its dependencies.
 app.delete('/api/tasks/:id', isAuthenticated, (req, res) => {
   const taskId = req.params.id;
   const userId = req.session.user.id;
 
-  // wrap both operations in a transaction
   const deleteTaskAndDeps = db.transaction((taskId, userId) => {
-    // 1) delete any dependencies involving this task
     db.prepare(`
       DELETE FROM dependencies
       WHERE (from_task = ? OR to_task = ?)
         AND user_id = ?
     `).run(taskId, taskId, userId);
 
-    // 2) delete the task itself
     return db.prepare(`
       DELETE FROM tasks
       WHERE id = ? AND user_id = ?
@@ -396,7 +363,6 @@ app.delete('/api/tasks/:id', isAuthenticated, (req, res) => {
 
   try {
     const result = deleteTaskAndDeps(taskId, userId);
-    // result.changes is how many tasks rows were deleted
     res.json({ changes: result.changes });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -407,21 +373,19 @@ app.delete('/api/tasks/:id', isAuthenticated, (req, res) => {
 
 app.get('/api/dependencies', isAuthenticated, (req, res) => {
   const { project_id } = req.query;
-  const userId = req.session.user.id; // Get userId from session
+  const userId = req.session.user.id; 
 
   try {
     let query = "SELECT * FROM dependencies WHERE user_id = ?";
     const params = [userId];
 
-    if (project_id !== undefined && project_id !== null) { // Check if project_id exists
+    if (project_id !== undefined && project_id !== null) { 
       query += " AND project_id = ?";
       params.push(project_id);
     }
 
-    // Prepare and execute synchronously
     const dependencies = db.prepare(query).all(params);
 
-    // Send the correct structure
     res.json({ dependencies: dependencies });
 
   } catch (error) {
@@ -433,7 +397,6 @@ app.get('/api/dependencies', isAuthenticated, (req, res) => {
 app.post('/api/dependencies', isAuthenticated, (req, res) => {
   const { from_task, to_task, project_id } = req.body;
   try {
-    // Run the insert and grab the generated row id
     const info = db.prepare(`
       INSERT INTO dependencies
         (from_task, to_task, project_id, user_id)
@@ -461,9 +424,7 @@ app.delete('/api/dependencies/:id', isAuthenticated, (req, res) => {
   }
 });
 
-// Update the generativeEdit function signature to accept chatHistory
 async function generativeEdit(userInput, projectId, userId, currentState, chatHistory) {
-  // Define Zod schema that matches our JSON schema
   const TaskSchema = z.object({
     id: z.number(),
     title: z.string().optional(),

@@ -1,10 +1,9 @@
 // server.js
 import express from 'express';
-import sqlite3pkg from 'sqlite3';
-const sqlite3 = sqlite3pkg.verbose();
+import Database from 'better-sqlite3';
+import BetterSqlite3Store from 'better-sqlite3-session-store';
 import cors from 'cors';
 import session from 'express-session';
-import connectSqlite3 from 'connect-sqlite3';
 import bcrypt from 'bcrypt';
 import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
@@ -13,100 +12,82 @@ import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import 'dotenv/config';
 
-const SQLiteStore = connectSqlite3(session);
-
-// const openai = new OpenAI();
 const openai = new OpenAI({
   apiKey: process.env.GEMINI_API_KEY,
   baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
 });
 
+const SqliteStore = BetterSqlite3Store(session);
+
 const app = express();
-const port = 3001;
 
 app.use(cors({
-  origin: true, // allow credentials from any origin for testing; restrict in production!
+  origin: true,
   credentials: true
 }));
 app.use(express.json());
 
 app.set('trust proxy', 1);
 
-// Configure sessions with a SQLite store.
+const db = new Database('./todos.db');
+db.pragma('foreign_keys = ON');
+
+const sessionDb = new Database('sessions.db');
 app.use(session({
-  store: new SQLiteStore({ db: 'sessions.db', dir: './' }),
+  store: new SqliteStore({ client: sessionDb }),
   secret: crypto.randomBytes(64).toString('hex'),
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, secure: process.env.NODE_ENV === 'production', domain: process.env.NODE_ENV === 'production' ? 'treetrack.xyz' : undefined } // 7 days persistence
+  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, secure: process.env.NODE_ENV === 'production', domain: process.env.NODE_ENV === 'production' ? 'treetrack.xyz' : undefined }
 }));
 
-// Connect to our main SQLite DB.
-const db = new sqlite3.Database('./todos.db', (err) => {
-  if (err) {
-    console.error("Error connecting to SQLite database:", err.message);
-  } else {
-    console.log('Connected to SQLite database.');
-    db.run("PRAGMA foreign_keys = ON");
-  }
-});
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    premium BOOLEAN DEFAULT 0
+  );
+`).run();
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    user_id INTEGER,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`).run();
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    posX REAL DEFAULT 0,
+    posY REAL DEFAULT 0,
+    completed INTEGER DEFAULT 0,
+    project_id INTEGER,
+    user_id INTEGER,
+    color TEXT,
+    locked BOOLEAN DEFAULT 0,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`).run();
 
-db.serialize(() => {
-  // Create the users table.
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      premium BOOLEAN DEFAULT 0
-    )
-  `);
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS dependencies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_task INTEGER,
+    to_task INTEGER,
+    project_id INTEGER,
+    user_id INTEGER,
+    FOREIGN KEY(from_task) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY(to_task) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`).run();
 
-  // Create the projects table (each project belongs to a user).
-  db.run(`
-    CREATE TABLE IF NOT EXISTS projects (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      user_id INTEGER,
-      FOREIGN KEY(user_id) REFERENCES users(id)
-    )
-  `);
-
-  // Create the tasks table.
-  db.run(`
-    CREATE TABLE IF NOT EXISTS tasks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      posX REAL DEFAULT 0,
-      posY REAL DEFAULT 0,
-      completed INTEGER DEFAULT 0,
-      project_id INTEGER,
-      user_id INTEGER,
-      color TEXT,
-      locked BOOLEAN DEFAULT 0,
-      FOREIGN KEY(project_id) REFERENCES projects(id),
-      FOREIGN KEY(user_id) REFERENCES users(id)
-    )
-  `);
-
-  // Create the dependencies table.
-  db.run(`
-    CREATE TABLE IF NOT EXISTS dependencies (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      from_task INTEGER,
-      to_task INTEGER,
-      project_id INTEGER,
-      user_id INTEGER,
-      FOREIGN KEY(from_task) REFERENCES tasks(id) DEFERRABLE INITIALLY DEFERRED,
-      FOREIGN KEY(to_task) REFERENCES tasks(id) DEFERRABLE INITIALLY DEFERRED,
-      FOREIGN KEY(project_id) REFERENCES projects(id),
-      FOREIGN KEY(user_id) REFERENCES users(id)
-    )
-  `);
-});
-
-// Middleware to check for an authenticated user.
 function isAuthenticated(req, res, next) {
   if (req.session && req.session.user) {
     return next();
@@ -114,7 +95,6 @@ function isAuthenticated(req, res, next) {
   return res.status(401).json({ error: "Not authenticated" });
 }
 
-// Middleware to check if the user is a premium user.
 function isPremium(req, res, next) {
   if (req.session && req.session.user && req.session.user.premium) {
     return next();
@@ -122,64 +102,94 @@ function isPremium(req, res, next) {
   return res.status(403).json({ error: "Premium access required" });
 }
 
-// Rate limiter for the login endpoint.
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 55,
   message: "Too many login attempts. Please try again later."
 });
 
-// --- Authentication Endpoints ---
+// --- AUTH ENDPOINTS ---
 
-// Register a new user.
-app.post('/api/register', async (req, res) => {
+
+app.post('/api/register', async (req, res) => { 
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: "Missing username or password" });
   }
+
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
-    db.run(
-      "INSERT INTO users (username, password) VALUES (?, ?)",
-      [username, hashedPassword],
-      function (err) {
-        if (err) {
-          return res.status(400).json({ error: err.message });
-        }
-        // Automatically log in the new user.
-        req.session.user = { id: this.lastID, username };
-        res.json({ id: this.lastID, username });
-      }
-    );
+
+    const info = db.prepare(
+      "INSERT INTO users (username, password) VALUES (?, ?)"
+    ).run(username, hashedPassword); 
+
+    const newUser = {
+      id: info.lastInsertRowid,
+      username: username,
+      premium: 0 
+    };
+
+    req.session.user = {
+      id: newUser.id,
+      username: newUser.username,
+      premium: Boolean(newUser.premium) 
+    };
+    console.log(`User ${newUser.username} registered. Session user set:`, req.session.user);
+
+    res.json({
+      id: newUser.id,
+      username: newUser.username,
+      premium: Boolean(newUser.premium)
+    });
+
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    console.error("Registration error:", error);
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      res.status(400).json({ error: error.code });
+    } else {
+      res.status(500).json({ error: error.code });
+    }
   }
 });
 
-// Login endpoint.
-app.post('/api/login', loginLimiter, (req, res) => {
+app.post('/api/login', loginLimiter, async (req, res) => { 
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: "Missing username or password" });
   }
-  db.get("SELECT * FROM users WHERE username = ?", [username], async (err, user) => {
-    if (err) return res.status(400).json({ error: err.message });
-    if (!user) return res.status(400).json({ error: "Invalid credentials" });
-    try {
-      const match = await bcrypt.compare(password, user.password);
-      if (match) {
-        req.session.user = { id: user.id, username: user.username, premium: user.premium };
-        res.json({ id: user.id, username: user.username, premium: user.premium });
-      } else {
-        res.status(400).json({ error: "Invalid credentials" });
-      }
-    } catch (error) {
-      res.status(500).json({ error: "Server error" });
+
+  try {
+    const user = db.prepare("SELECT id, username, password, premium FROM users WHERE username = ?").get(username);
+
+    if (!user) {
+      return res.status(400).json({ error: "Invalid credentials" });
     }
-  });
+
+    const match = await bcrypt.compare(password, user.password);
+
+    if (match) {
+      req.session.user = {
+        id: user.id,
+        username: user.username,
+        premium: Boolean(user.premium)
+      };
+
+      res.json({
+        id: user.id,
+        username: user.username,
+        premium: Boolean(user.premium)
+      });
+    } else {
+      res.status(400).json({ error: "Invalid credentials" });
+    }
+
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({ error: "Server error during login process" });
+  }
 });
 
-// Logout endpoint.
 app.post('/api/logout', (req, res) => {
   req.session.destroy((err) => {
     if (err) return res.status(500).json({ error: "Could not log out" });
@@ -187,7 +197,6 @@ app.post('/api/logout', (req, res) => {
   });
 });
 
-// Endpoint to get the current session's user.
 app.get('/api/me', (req, res) => {
   if (req.session && req.session.user) {
     res.json({ user: req.session.user });
@@ -199,139 +208,222 @@ app.get('/api/me', (req, res) => {
 // --- PROJECT ENDPOINTS (Authenticated) ---
 
 app.get('/api/projects', isAuthenticated, (req, res) => {
-  db.all("SELECT * FROM projects WHERE user_id = ?", [req.session.user.id], (err, rows) => {
-    if (err) return res.status(400).json({ error: err.message });
+  try {
+    const rows = db.prepare("SELECT * FROM projects WHERE user_id = ?").all(req.session.user.id);
     res.json({ projects: rows });
-  });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
 });
 
 app.post('/api/projects', isAuthenticated, (req, res) => {
   const { name } = req.body;
-  db.run("INSERT INTO projects (name, user_id) VALUES (?, ?)", [name, req.session.user.id], function (err) {
-    if (err) return res.status(400).json({ error: err.message });
-    res.json({ id: this.lastID, name });
-  });
+  try {
+    const stmt = db.prepare(
+      `INSERT INTO projects (name, user_id)
+       VALUES (?, ?)`
+    );
+    const info = stmt.run(name, req.session.user.id);
+    res.json({ id: info.lastInsertRowid, name });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 app.delete('/api/projects/:id', isAuthenticated, (req, res) => {
   const projectId = req.params.id;
-  db.serialize(() => {
-    db.run("DELETE FROM dependencies WHERE project_id = ? AND user_id = ?", [projectId, req.session.user.id], function (err) {
-      if (err) return res.status(400).json({ error: err.message });
-      db.run("DELETE FROM tasks WHERE project_id = ? AND user_id = ?", [projectId, req.session.user.id], function (err2) {
-        if (err2) return res.status(400).json({ error: err2.message });
-        db.run("DELETE FROM projects WHERE id = ? AND user_id = ?", [projectId, req.session.user.id], function (err3) {
-          if (err3) return res.status(400).json({ error: err3.message });
-          res.json({ changes: this.changes });
-        });
-      });
-    });
-  });
+  const userId = req.session.user.id;
+
+  try {
+    const changes = db
+      .transaction((projId, uid) => {
+        db
+          .prepare(`DELETE FROM dependencies 
+                    WHERE project_id = ? 
+                      AND user_id = ?`)
+          .run(projId, uid);
+
+        db
+          .prepare(`DELETE FROM tasks 
+                    WHERE project_id = ? 
+                      AND user_id = ?`)
+          .run(projId, uid);
+
+        return db
+          .prepare(`DELETE FROM projects 
+                    WHERE id = ? 
+                      AND user_id = ?`)
+          .run(projId, uid)
+          .changes;
+      })(projectId, userId);
+
+    res.json({ changes });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // --- TASK ENDPOINTS (Authenticated) ---
 
 app.get('/api/tasks', isAuthenticated, (req, res) => {
   const { project_id } = req.query;
-  let query = "SELECT * FROM tasks WHERE user_id = ?";
-  const params = [req.session.user.id];
-  if (project_id) {
-    query += " AND project_id = ?";
-    params.push(project_id);
+  const userId = req.session.user.id; 
+
+  try {
+    let query = "SELECT * FROM tasks WHERE user_id = ?";
+    const params = [userId];
+
+    if (project_id !== undefined && project_id !== null) { 
+      query += " AND project_id = ?";
+      params.push(project_id);
+    }
+
+    const tasks = db.prepare(query).all(params);
+
+    res.json({ tasks: tasks });
+
+  } catch (error) {
+    console.error("Error fetching tasks:", error);
+    res.status(500).json({ error: "Failed to retrieve tasks" });
   }
-  db.all(query, params, (err, rows) => {
-    if (err) return res.status(400).json({ error: err.message });
-    res.json({ tasks: rows });
-  });
 });
+
 
 app.post('/api/tasks', isAuthenticated, (req, res) => {
-  const { title, posX, posY, completed, project_id, color } = req.body;  // Added color to destructuring
-  db.run(
-    "INSERT INTO tasks (title, posX, posY, completed, project_id, user_id, color) VALUES (?, ?, ?, ?, ?, ?, ?)",  // Added color to INSERT
-    [title, posX || 0, posY || 0, completed || 0, project_id, req.session.user.id, color || '#ffffff'],  // Added color with default
-    function (err) {
-      if (err) return res.status(400).json({ error: err.message });
-      res.json({ id: this.lastID });
-    }
-  );
-});
+  const { title, posX = 0, posY = 0, completed, project_id, color } = req.body;
 
-app.put('/api/tasks', isAuthenticated, (req, res) => {
-  // Update many rows of table
+  try {
+    const stmt = db.prepare(`
+      INSERT INTO tasks 
+        (title, posX, posY, completed, project_id, user_id, color) 
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    const info = stmt.run(
+      title,
+      posX,
+      posY,
+      completed,
+      project_id,
+      req.session.user.id,
+      color || '#ffffff'
+    );
+
+    res.json({ id: info.lastInsertRowid });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.put('/api/tasks/:id', isAuthenticated, (req, res) => {
   const { title, posX, posY, completed, color, project_id } = req.body;
-  db.run(
-    "UPDATE tasks SET title = ?, posX = ?, posY = ?, completed = ?, color = ?, project_id = ? WHERE id = ? AND user_id = ?",
-    [title, posX, posY, completed, color, project_id, req.params.id, req.session.user.id],
-    function (err) {
-      if (err) return res.status(400).json({ error: err.message });
-      res.json({ changes: this.changes });
-    }
-  );
+  try {
+    const stmt = db.prepare(`
+      UPDATE tasks
+      SET title      = ?,
+          posX       = ?,
+          posY       = ?,
+          completed  = ?,
+          color      = ?,
+          project_id = ?
+      WHERE id = ? AND user_id = ?
+    `);
+    const result = stmt.run(
+      title,
+      posX,
+      posY,
+      completed,
+      color,
+      project_id,
+      req.params.id,
+      req.session.user.id
+    );
+    res.json({ changes: result.changes });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
-// When deleting a task, first delete its dependencies.
 app.delete('/api/tasks/:id', isAuthenticated, (req, res) => {
-  db.serialize(() => {
-    db.run(
-      "DELETE FROM dependencies WHERE (from_task = ? OR to_task = ?) AND user_id = ?",
-      [req.params.id, req.params.id, req.session.user.id],
-      function (err) {
-        if (err) return res.status(400).json({ error: err.message });
-        db.run(
-          "DELETE FROM tasks WHERE id = ? AND user_id = ?",
-          [req.params.id, req.session.user.id],
-          function (err2) {
-            if (err2) return res.status(400).json({ error: err2.message });
-            res.json({ changes: this.changes });
-          }
-        );
-      }
-    );
+  const taskId = req.params.id;
+  const userId = req.session.user.id;
+
+  const deleteTaskAndDeps = db.transaction((taskId, userId) => {
+    db.prepare(`
+      DELETE FROM dependencies
+      WHERE (from_task = ? OR to_task = ?)
+        AND user_id = ?
+    `).run(taskId, taskId, userId);
+
+    return db.prepare(`
+      DELETE FROM tasks
+      WHERE id = ? AND user_id = ?
+    `).run(taskId, userId);
   });
+
+  try {
+    const result = deleteTaskAndDeps(taskId, userId);
+    res.json({ changes: result.changes });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // --- DEPENDENCY ENDPOINTS (Authenticated) ---
 
 app.get('/api/dependencies', isAuthenticated, (req, res) => {
   const { project_id } = req.query;
-  let query = "SELECT * FROM dependencies WHERE user_id = ?";
-  const params = [req.session.user.id];
-  if (project_id) {
-    query += " AND project_id = ?";
-    params.push(project_id);
+  const userId = req.session.user.id; 
+
+  try {
+    let query = "SELECT * FROM dependencies WHERE user_id = ?";
+    const params = [userId];
+
+    if (project_id !== undefined && project_id !== null) { 
+      query += " AND project_id = ?";
+      params.push(project_id);
+    }
+
+    const dependencies = db.prepare(query).all(params);
+
+    res.json({ dependencies: dependencies });
+
+  } catch (error) {
+    console.error("Error fetching dependencies:", error);
+    res.status(500).json({ error: "Failed to retrieve dependencies" });
   }
-  db.all(query, params, (err, rows) => {
-    if (err) return res.status(400).json({ error: err.message });
-    res.json({ dependencies: rows });
-  });
 });
 
 app.post('/api/dependencies', isAuthenticated, (req, res) => {
   const { from_task, to_task, project_id } = req.body;
-  db.run(
-    "INSERT INTO dependencies (from_task, to_task, project_id, user_id) VALUES (?, ?, ?, ?)",
-    [from_task, to_task, project_id, req.session.user.id],
-    function (err) {
-      if (err) return res.status(400).json({ error: err.message });
-      res.json({ id: this.lastID });
-    }
-  );
+  try {
+    const info = db.prepare(`
+      INSERT INTO dependencies
+        (from_task, to_task, project_id, user_id)
+      VALUES
+        (?, ?, ?, ?)
+    `).run(
+      from_task,
+      to_task,
+      project_id,
+      req.session.user.id
+    );
+    res.json({ id: info.lastInsertRowid });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.delete('/api/dependencies/:id', isAuthenticated, (req, res) => {
-  db.run("DELETE FROM dependencies WHERE id = ? AND user_id = ?", [req.params.id, req.session.user.id], function (err) {
-    if (err) return res.status(400).json({ error: err.message });
-    res.json({ changes: this.changes });
-  });
+  try
+  {
+    const info = db.prepare("DELETE FROM dependencies WHERE id = ? AND user_id = ?").run(req.params.id, req.session.user.id);
+    res.json({ changes: info.changes });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
-// Update the generativeEdit function signature to accept chatHistory
-async function generativeEdit(userInput, projectId, userId, currentState, chatHistory) { // Added chatHistory parameter
-  // Define Zod schema that matches our JSON schema
+async function generativeEdit(userInput, projectId, userId, currentState, chatHistory) {
   const TaskSchema = z.object({
     id: z.number(),
     title: z.string().optional(),
@@ -535,6 +627,7 @@ app.post('/api/generate', isAuthenticated, isPremium, async (req, res) => {
     const projectData = await generativeEdit(user_input, project_id, req.session.user.id, current_state, chat_history); // Pass chat_history
     res.json({ data: projectData });
   } catch (error) {
+    
     res.status(500).json({ error: "Failed to generate project structure" });
   }
 });
@@ -544,99 +637,94 @@ app.post('/api/log-error', express.json(), (req, res) => {
   res.sendStatus(204);
 });
 
-// 1) Helper to turn db.run into a Promise that resolves with lastID
-function runAsync(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
-      if (err) return reject(err);
-      resolve(this.lastID);
-    });
-  });
-}
-
-// 2) Your new bulk-change handler
 // --- BULK CHANGE ENDPOINT (Authenticated) ---
-app.post('/api/bulk-change', isAuthenticated, async (req, res) => {
+app.post('/api/bulk-change', isAuthenticated, (req, res) => {
   const { project_id, tasks, dependencies } = req.body;
   const userId = req.session.user.id;
   const idMap = {};      // tempId → realId
   const tasksCreated = [];
   const depsCreated = [];
 
-  try {
-    await runAsync("BEGIN TRANSACTION");
-
-    // 3) Insert new tasks one by one, capturing real IDs
+  // create a single transaction that includes everything
+  const bulkChange = db.transaction(() => {
+    // 1) Insert new tasks
     for (let t of tasks.created) {
-      const realId = await runAsync(
-        `INSERT INTO tasks
-           (title,posX,posY,completed,color,project_id,user_id)
-         VALUES (?,?,?,?,?,?,?)`,
-        [t.title, t.posX, t.posY, t.completed, t.color, project_id, userId]
-      );
-      idMap[t.tempId] = realId;
-      tasksCreated.push({ tempId: String(t.tempId), newId: realId });
+      const info = db
+        .prepare(
+          `INSERT INTO tasks
+             (title,posX,posY,completed,color,project_id,user_id)
+           VALUES (?,?,?,?,?,?,?)`
+        )
+        .run(t.title, t.posX, t.posY, t.completed, t.color, project_id, userId);
+
+      idMap[t.tempId] = info.lastInsertRowid;
+      tasksCreated.push({ tempId: String(t.tempId), newId: info.lastInsertRowid });
     }
 
-    // 4) Update existing tasks
+    // 2) Update existing tasks
     for (let t of tasks.updated) {
-      await runAsync(
-        `UPDATE tasks
-            SET title=?,posX=?,posY=?,completed=?,color=?,project_id=?
-          WHERE id=? AND user_id=?`,
-        [t.title, t.posX, t.posY, t.completed, t.color, project_id, t.id, userId]
-      );
+      db
+        .prepare(
+          `UPDATE tasks
+              SET title=?,posX=?,posY=?,completed=?,color=?,project_id=?
+            WHERE id=? AND user_id=?`
+        )
+        .run(t.title, t.posX, t.posY, t.completed, t.color, project_id, t.id, userId);
     }
 
-    // 5) Delete tasks (and cascade-cleanup dependencies)
+    // 3) Delete tasks & their deps
     for (let id of tasks.deleted) {
-      await runAsync(
-        `DELETE FROM dependencies
-           WHERE (from_task=? OR to_task=?) AND user_id=?`,
-        [id, id, userId]
-      );
-      await runAsync(
-        `DELETE FROM tasks WHERE id=? AND user_id=?`,
-        [id, userId]
-      );
+      db
+        .prepare(
+          `DELETE FROM dependencies
+             WHERE (from_task=? OR to_task=?) AND user_id=?`
+        )
+        .run(id, id, userId);
+
+      db
+        .prepare(`DELETE FROM tasks WHERE id=? AND user_id=?`)
+        .run(id, userId);
     }
 
-    // 6) Now insert new dependencies — **using the real task IDs**!
+    // 4) Insert new dependencies
     for (let d of dependencies.created) {
       const from = idMap[d.from_task] || d.from_task;
       const to = idMap[d.to_task] || d.to_task;
-      const newDepId = await runAsync(
-        `INSERT INTO dependencies
-           (from_task,to_task,project_id,user_id)
-         VALUES (?,?,?,?)`,
-        [from, to, project_id, userId]
-      );
-      depsCreated.push({ from_task: from, to_task: to, newId: newDepId });
+      const info = db
+        .prepare(
+          `INSERT INTO dependencies
+             (from_task,to_task,project_id,user_id)
+           VALUES (?,?,?,?)`
+        )
+        .run(from, to, project_id, userId);
+
+      depsCreated.push({ from_task: from, to_task: to, newId: info.lastInsertRowid });
     }
 
-    // 7) Updates & deletes for dependencies
+    // 5) Update dependencies
     for (let d of dependencies.updated) {
-      await runAsync(
-        `UPDATE dependencies
-            SET from_task=?,to_task=?,project_id=?
-          WHERE id=? AND user_id=?`,
-        [d.from_task, d.to_task, project_id, d.id, userId]
-      );
+      db
+        .prepare(
+          `UPDATE dependencies
+              SET from_task=?,to_task=?,project_id=?
+            WHERE id=? AND user_id=?`
+        )
+        .run(d.from_task, d.to_task, project_id, d.id, userId);
     }
+
+    // 6) Delete dependencies
     for (let id of dependencies.deleted) {
-      await runAsync(
-        `DELETE FROM dependencies WHERE id=? AND user_id=?`,
-        [id, userId]
-      );
+      db
+        .prepare(`DELETE FROM dependencies WHERE id=? AND user_id=?`)
+        .run(id, userId);
     }
+  });
 
-    // 8) Commit
-    await runAsync("COMMIT");
+  try {
+    bulkChange();  // runs BEGIN ... COMMIT or auto-ROLLBACK on error
     res.json({ tasksCreated, dependenciesCreated: depsCreated });
-
   } catch (err) {
-    await runAsync("ROLLBACK");
-    console.error("bulk-change failed:", err);
+    console.error('bulk-change failed:', err);
     res.status(500).json({ error: err.message });
   }
 });

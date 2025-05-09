@@ -10,13 +10,12 @@ export const initializeHocusProvider = (projectId, user) => {
   const provider = new HocuspocusProvider({
     url: `ws://localhost:3001/collaboration/${projectId}`,
     name: `projectdocument.${projectId}`,
-    token: user?.id?.toString(), // Pass user ID for authentication
+    //token: user?.id?.toString(), // Pass user ID for authentication
   });
 
   // Define our Yjs data structures
   const tasks = provider.document.getMap("tasks");
   const dependencies = provider.document.getMap("dependencies");
-  const selections = provider.document.getMap("selections");
 
   // Helper functions for working with the Yjs data
   
@@ -94,14 +93,6 @@ export const initializeHocusProvider = (projectId, user) => {
     return true;
   };
   
-  // Selections
-  const selectItem = (itemId, userId) => {
-    selections.set(itemId, userId);
-  };
-  
-  const deselectItem = (itemId) => {
-    selections.delete(itemId);
-  };
   
   // Convert tasks and dependencies to React Flow format
   const getReactFlowData = () => {
@@ -151,8 +142,6 @@ export const initializeHocusProvider = (projectId, user) => {
     deleteTask,
     addDependency,
     deleteDependency,
-    selectItem,
-    deselectItem,
     getReactFlowData
   };
 };

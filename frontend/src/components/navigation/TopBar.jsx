@@ -152,16 +152,8 @@ const TopBar = memo(({
                         <h3 className="text-sm font-semibold mb-2">Keyboard Shortcuts</h3>
                         <ul className="space-y-2 text-sm">
                             <li className="flex justify-between">
-                                <span>Link tasks</span>
+                                <span>Link/unlink tasks</span>
                                 <span>
-                                    <kbd className="px-1 py-0.5 border rounded">Ctrl</kbd> +{" "}
-                                    <kbd className="px-1 py-0.5 border rounded">Click</kbd>
-                                </span>
-                            </li>
-                            <li className="flex justify-between">
-                                <span>Unlink tasks</span>
-                                <span>
-                                    <kbd className="px-1 py-0.5 border rounded">Ctrl</kbd> +{" "}
                                     <kbd className="px-1 py-0.5 border rounded">Shift</kbd> +{" "}
                                     <kbd className="px-1 py-0.5 border rounded">Click</kbd>
                                 </span>
@@ -169,7 +161,14 @@ const TopBar = memo(({
                             <li className="flex justify-between">
                                 <span>Select multiple</span>
                                 <span>
-                                    <kbd className="px-1 py-0.5 border rounded">Shift</kbd> +{" "}
+                                    <kbd className="px-1 py-0.5 border rounded">Ctrl</kbd> +{" "}
+                                    <kbd className="px-1 py-0.5 border rounded">Click</kbd>
+                                </span>
+                            </li>
+                            <li className="flex justify-between">
+                                <span>Select box</span>
+                                <span>
+                                    <kbd className="px-1 py-0.5 border rounded">Ctrl</kbd> +{" "}
                                     <kbd className="px-1 py-0.5 border rounded">Drag</kbd>
                                 </span>
                             </li>

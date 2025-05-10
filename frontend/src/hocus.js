@@ -88,7 +88,6 @@ export const initializeHocusProvider = (projectId, user) => {
   
   const deleteDependency = (depId) => {
     dependencies.delete(depId);
-    //selections.delete(depId);
     
     return true;
   };

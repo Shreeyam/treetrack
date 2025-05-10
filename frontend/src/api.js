@@ -60,22 +60,6 @@ export const deleteProject = async (projectId) => {
   return res.json();
 };
 
-export const fetchTasksAndEdges = async (projectId) => {
-  console.log(`Fetching tasks and dependencies for project: ${projectId}`);
-  
-  // Use the hocus provider for this project
-  const { provider, tasks } = initializeHocusProvider(projectId);
-  
-  // Continue with regular API calls
-  const tasksRes = await fetch(`/api/tasks?project_id=${projectId}`, { credentials: 'include' });
-  const tasksData = await tasksRes.json();
-
-  const depRes = await fetch(`/api/dependencies?project_id=${projectId}`, { credentials: 'include' });
-  const depData = await depRes.json();
-
-  return { tasks: tasksData.tasks, dependencies: depData.dependencies };
-};
-
 export const updateTask = async (taskId, taskData) => {
   await fetch(`/api/tasks/${taskId}`, {
     method: 'PUT',

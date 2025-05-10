@@ -386,24 +386,27 @@ function App({ user, setUser }) {
             }
 
             if (event.shiftKey) {
-                // event.preventDefault();
-                // event.stopPropagation();
                 // If we don't have any selected nodes, select the clicked node and go into selection mode
-                const currentSelectedNodes = nodes.filter(n => n.selected);
+                const currentSelectedNodes = nodesRef.current.filter(n => n.selected);
 
-                if (currentSelectedNodes.length === 0) {
+                if (currentSelectedNodes.length === 0 || (linkHighlight && (linkHighlight.source && linkHighlight.target))) {
                     setLinkHighlight({ source: node.id, target: null });
                 } else if (currentSelectedNodes.length === 1 || linkHighlight) {
                     const sourceNode = currentSelectedNodes[0] || linkHighlight;
 
+                    // Don't link them if they are the same node
+                    if (sourceNode.id === node.id) {
+                        return;
+                    }
+
                     // First, check if they are linked
-                    const edge = edges.find(e => e.source === sourceNode.id && e.target === node.id);
+                    const edge = edgesRef.current.find(e => e.source === sourceNode.id && e.target === node.id);
 
                     if (edge) {
                         setEdges((eds) => eds.filter(e => e.id !== edge.id));
                         deleteDependency(edge.id);
                         setUnlinkHighlight({ source: sourceNode.id, target: node.id });
-                        setTimeout(() => setUnlinkHighlight(null) || setLinkHighlight(null), 500);
+                        setTimeout(() => setUnlinkHighlight(null) || setLinkHighlight(null), 400);
                     } else {
                         // Otherwise, link them!
                         onConnect({
@@ -412,7 +415,7 @@ function App({ user, setUser }) {
                         });
                         console.log({ source: sourceNode.id, target: node.id });
                         setLinkHighlight({ source: sourceNode.id, target: node.id });
-                        setTimeout(() => setLinkHighlight(null), 500);
+                        setTimeout(() => setLinkHighlight(null), 400);
                     }
 
                     // Remove any selections    
@@ -426,7 +429,7 @@ function App({ user, setUser }) {
                                 style: createNodeStyle(
                                     cleared.data.color,
                                     cleared.data.completed,
-        /* selected */ false,
+                                    false,
                                     cleared.draft
                                 ),
                             };
@@ -436,7 +439,7 @@ function App({ user, setUser }) {
 
             }
         },
-        [nodes, contextMenu, linkHighlight, edges, onConnect]
+        [contextMenu, linkHighlight, onConnect]
     );
 
     const handleToggleCompleted = useCallback((node) => {

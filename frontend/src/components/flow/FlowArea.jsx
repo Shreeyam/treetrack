@@ -15,7 +15,7 @@ const FlowArea = memo(({
     nodes,
     edges,
     onNodesChange,
-    onEdgesChange,
+    onEdgesChange, // Accept onEdgesChange as a prop, but clarify in comments that it should only be used for UI changes (selection, style), not add/remove.
     onConnect,
     onNodeClick,
     onNodeContextMenu,
@@ -103,7 +103,7 @@ const FlowArea = memo(({
 
     const handleDeleteEdge = useCallback((edgeToDelete) => {
         if (onEdgesChange) {
-            onEdgesChange([{ type: 'remove', id: edgeToDelete.id }]);
+            onEdgesChange([{ type: 'remove', id: edgeToDelete.id }]); // When calling onEdgesChange for remove, this will now go through the custom handler in App.jsx, which calls Yjs and does not setEdges directly.
         }
         handleCloseArrowMenu();
     }, [onEdgesChange, handleCloseArrowMenu]);

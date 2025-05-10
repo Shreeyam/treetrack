@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ReactFlowProvider, applyNodeChanges, addEdge, applyEdgeChanges } from '@xyflow/react';
+import { ReactFlowProvider, addEdge, applyEdgeChanges, applyNodeChanges } from '@xyflow/react';
+import { useNodesState, useEdgesState } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import '@/globals.css';
 import "@/App.css";
@@ -32,8 +33,8 @@ function App({user, setUser}) {
     // --- Main App States ---
     const [projects, setProjects] = useState([]);
     const [currentProject, setCurrentProject] = useState(''); // Don't load from localStorage until user is authenticated
-    const [nodes, setNodes] = useState([]);
-    const [edges, setEdges] = useState([]);
+    const [nodes, setNodes, onNodesChange] = useNodesState([]);
+    const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const [prevNodes, setPrevNodes] = useState([]);
     const [prevEdges, setPrevEdges] = useState([]);
     const [selectedSource, setSelectedSource] = useState(null);
@@ -469,64 +470,7 @@ function App({user, setUser}) {
         }
     }, []);
       // --- Node Management ---
-    const onNodesChange = useCallback(
-        (changes) =>
-            setNodes((prev) => {
-                if (!changes.length) return prev;
-
-                /** Build a quick lookup table for the changed nodes */
-                const changed = new Map();
-                changes.forEach((c) => changed.set(c.id, c));
-
-                let mutated = false;
-                
-                // Track node position updates for YJS synchronization
-                const positionChanges = new Set();
-
-                const next = prev.map((node) => {
-                    const change = changed.get(node.id);
-                    if (!change) return node; // untouched → keep original reference
-
-                    mutated = true;
-                    
-                    // Detect position changes that need to be synchronized with YJS
-                    if (change.type === "position" && !node.draft) {
-                        positionChanges.add(node.id);
-                    }
-
-                    /** Let React‑Flow merge the positional / selection changes */
-                    const updated = applyNodeChanges([change], [node])[0];
-
-                    /** Re‑compute style *only* if something visual actually changed */
-                    const needsNewStyle =
-                        "selected" in change ||
-                        (change.type === "dimensions" && node.data.completed !== updated.data.completed);
-
-                    return needsNewStyle
-                        ? {
-                            ...updated,
-                            style: createNodeStyle(
-                                updated.data.color,
-                                updated.data.completed,
-                                updated.selected,
-                                updated.draft
-                            ),
-                        }
-                        : updated;
-                });
-                
-                // Use throttled position updates for better performance
-                if (positionChanges.size > 0) {
-                    // Queue position updates instead of immediately syncing
-                    requestAnimationFrame(() => {
-                        positionChanges.forEach(nodeId => queuePositionUpdate(nodeId));
-                    });
-                }
-
-                return mutated ? next : prev;
-            }),
-        [createNodeStyle, queuePositionUpdate]
-    );    const onNodeDragStop = useCallback(
+    const onNodeDragStop = useCallback(
         (event, node) => {
             // Ignore draft nodes
             if (node.draft) return;
@@ -563,16 +507,18 @@ function App({user, setUser}) {
     );
 
     // --- Edge Management ---
-    const onEdgesChange = useCallback(
+    const customOnEdgesChange = useCallback(
         (changes) => {
-            setEdges((prevEdges) => applyEdgeChanges(changes, prevEdges));
-
-            // Handle edge deletion from the context menu
             changes.forEach(change => {
                 if (change.type === 'remove' && yjsHandlerRef.current) {
                     yjsHandlerRef.current.deleteDependency(change.id);
                 }
             });
+            // For non-remove changes (e.g., selection), let useEdgesState handle it
+            const filtered = changes.filter(c => c.type !== 'remove');
+            if (filtered.length > 0) {
+                setEdges((prevEdges) => applyEdgeChanges(filtered, prevEdges));
+            }
         },
         [] // No dependencies needed as we're using refs
     );
@@ -583,23 +529,12 @@ function App({user, setUser}) {
                 console.error("Yjs handler not available");
                 return;
             }
-            
-            // Use Yjs to add dependency
-            const edgeId = yjsHandlerRef.current.addDependency(params.source, params.target);
-            
-            // Add edge to React Flow with the ID from Yjs
-            const newEdge = { 
-                ...params, 
-                id: edgeId, 
-                markerEnd: { type: 'arrowclosed' } 
-            };
-            
-            setEdges((eds) => addEdge(newEdge, eds));
+            // Use Yjs to add dependency; Yjs observer will update edges
+            yjsHandlerRef.current.addDependency(params.source, params.target);
         },
-        [] // No dependencies needed as we're using refs
+        []
     );
 
-    // --- Node Interaction Handlers ---
     const handleNodeClick = useCallback(
         (event, node) => {
             if (contextMenu.visible) {
@@ -612,8 +547,7 @@ function App({user, setUser}) {
                 } else if (selectedUnlinkSource.id !== node.id) {
                     const edge = edges.find(e => e.source === selectedUnlinkSource.id && e.target === node.id);
                     if (edge && yjsHandlerRef.current) {
-                        setEdges((eds) => eds.filter(e => e.id !== edge.id));
-                        // Use Yjs to delete dependency
+                        // Only call Yjs, do not setEdges directly
                         yjsHandlerRef.current.deleteDependency(edge.id);
                     }
                     setUnlinkHighlight({ source: selectedUnlinkSource.id, target: node.id });
@@ -1272,6 +1206,38 @@ function App({user, setUser}) {
     }
     , [reactFlowInstance]);
 
+    // --- Node Management ---
+    // Custom onNodesChange to update style for selection changes (UI only)
+    const customOnNodesChange = useCallback(
+        (changes) => {
+            setNodes((prevNodes) => {
+                let changed = false;
+                const nextNodes = prevNodes.map((node) => {
+                    const change = changes.find((c) => c.id === node.id);
+                    if (!change) return node;
+                    // Only update style if selection changed
+                    if (typeof change.selected === 'boolean' && change.selected !== node.selected) {
+                        changed = true;
+                        return {
+                            ...node,
+                            selected: change.selected,
+                            style: createNodeStyle(
+                                node.data.color,
+                                node.data.completed,
+                                change.selected,
+                                node.draft
+                            ),
+                        };
+                    }
+                    return node;
+                });
+                // Let useNodesState handle other changes (position, etc)
+                return changed ? nextNodes : applyNodeChanges(changes, prevNodes);
+            });
+        },
+        [createNodeStyle, setNodes]
+    );
+
     if (!user) {
         return <MemoAuthForm onLogin={setUser} />;
     }
@@ -1311,8 +1277,8 @@ function App({user, setUser}) {
                 <MemoFlowArea
                     nodes={renderedNodes}
                     edges={visibleEdges}
-                    onNodesChange={onNodesChange}
-                    onEdgesChange={onEdgesChange}
+                    onNodesChange={customOnNodesChange}
+                    onEdgesChange={customOnEdgesChange}
                     onConnect={onConnect}
                     onNodeMouseDown={handleNodeClick}
                     onNodeContextMenu={handleNodeContextMenu}

@@ -45,7 +45,19 @@ export const sha256 = async (str) => {
  * - Only persisted fields are included
  */
 export const canonicalizeProject = ({ nodes, edges }) => {
-  const normNodes = [...nodes]
+  // First deduplicate nodes by ID - this handles the potential race condition
+  // where the same node might appear twice in the React state
+  const uniqueNodesMap = new Map();
+  
+  for (const node of nodes) {
+    if (!uniqueNodesMap.has(node.id)) {
+      uniqueNodesMap.set(node.id, node);
+    } else {
+      console.warn(`Duplicate node detected with ID ${node.id} during canonicalization`);
+    }
+  }
+  
+  const normNodes = [...uniqueNodesMap.values()]
     .filter((n) => !n.draft)             // ignore unsaved AI drafts
     .map((n) => {
       // Extract the properties in a way that works with both frontend and backend formats
@@ -57,7 +69,7 @@ export const canonicalizeProject = ({ nodes, edges }) => {
       const y = n.position?.y || n.posY || 0;
       
       return {
-        id: Number(n.id),
+        id: n.id.toString(), // Keep IDs as strings to preserve UUIDs
         title: label,
         completed,
         color,
@@ -65,16 +77,15 @@ export const canonicalizeProject = ({ nodes, edges }) => {
         y,
       };
     })
-    .sort((a, b) => a.id - b.id);
-
+    .sort((a, b) => a.id.localeCompare(b.id)); // Sort string IDs alphabetically
   const normEdges = [...edges]
     .filter((e) => !e.draft)
     .map((e) => ({
-      id: Number(e.id),
-      source: Number(e.source || e.from_task),
-      target: Number(e.target || e.to_task),
+      id: e.id.toString(), // Keep IDs as strings to preserve UUIDs
+      source: (e.source || e.from_task).toString(),
+      target: (e.target || e.to_task).toString(),
     }))
-    .sort((a, b) => a.id - b.id);
+    .sort((a, b) => a.id.localeCompare(b.id)); // Sort string IDs alphabetically
 
   return { nodes: normNodes, edges: normEdges };
 };
@@ -92,8 +103,12 @@ export const projectHash = async ({ nodes, edges }) =>
 export const diffStates = (local, remote) => {
   const out = { nodes: [], edges: [] };
 
-  const lNodes = new Map(local.nodes.map((n) => [n.id, n]));
-  const rNodes = new Map(remote.nodes.map((n) => [n.id, n]));
+  const lNodes = new Map(local.nodes.map((n) => [n.id.toString(), n]));
+  const rNodes = new Map(remote.nodes.map((n) => [n.id.toString(), n]));
+
+  // Debug output for troubleshooting
+  console.log('Local nodes:', local.nodes.length);
+  console.log('Remote nodes:', remote.nodes.length);
 
   // Added / changed / removed nodes
   lNodes.forEach((n, id) => {
@@ -108,10 +123,13 @@ export const diffStates = (local, remote) => {
       out.nodes.push({ id, type: 'missing_locally', n });
     }
   });
-
   // Same for edges
-  const lEdges = new Map(local.edges.map((e) => [e.id, e]));
-  const rEdges = new Map(remote.edges.map((e) => [e.id, e]));
+  const lEdges = new Map(local.edges.map((e) => [e.id.toString(), e]));
+  const rEdges = new Map(remote.edges.map((e) => [e.id.toString(), e]));
+
+  // Debug output for troubleshooting
+  console.log('Local edges:', local.edges.length);
+  console.log('Remote edges:', remote.edges.length);
 
   lEdges.forEach((e, id) => {
     if (!rEdges.has(id)) {

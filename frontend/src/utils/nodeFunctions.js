@@ -112,26 +112,13 @@ export function createAddNewNode({
             completed: false,
             color: DEFAULT_COLOR
         };
-        
-        // Add to Yjs document and get the generated ID
+          // Add to Yjs document - this will trigger the YJS observer in App.jsx
+        // which will update the React state with all nodes including this new one
         const newTaskId = yjs.addTask(newTaskData);
         
-        // Create a node with the ID from Yjs
-        const newNode = {
-            id: newTaskId,
-            data: { 
-                label: taskTitle, 
-                completed: false, 
-                color: DEFAULT_COLOR 
-            },
-            position: newPosition,
-            style: createNodeStyle(DEFAULT_COLOR, false),
-            sourcePosition: 'right',
-            targetPosition: 'left'
-        };
-
-        // Update React state
-        setNodes(nodes => [...nodes, newNode]);
+        // Don't directly update React state - let the YJS observer handle it
+        // The observer will get triggered by the YJS document change and add the node to state
+        
         setNewTaskTitle('');
         setLastNodePosition(newPosition);
     };

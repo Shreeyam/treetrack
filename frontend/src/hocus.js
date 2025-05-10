@@ -68,7 +68,7 @@ export const initializeHocusProvider = (projectId, user) => {
     });
     
     // Clear any selections for this task
-    selections.delete(taskId);
+    //selections.delete(taskId);
     
     return true;
   };
@@ -88,7 +88,7 @@ export const initializeHocusProvider = (projectId, user) => {
   
   const deleteDependency = (depId) => {
     dependencies.delete(depId);
-    selections.delete(depId);
+    //selections.delete(depId);
     
     return true;
   };

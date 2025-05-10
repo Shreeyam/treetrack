@@ -67,6 +67,16 @@ function App({user, setUser}) {
     const edgesRef = useRef(edges);
     const currentProjectRef = useRef(currentProject);
     const yjsHandlerRef = useRef(null);
+      // For throttling node position updates
+    const pendingPositionUpdatesRef = useRef(new Map());
+    const isProcessingPositionUpdatesRef = useRef(false);
+    
+    // For monitoring update frequency
+    const updateStatsRef = useRef({
+        lastReset: Date.now(),
+        updateCount: 0,
+        skippedCount: 0
+    });
 
     const navigate = useNavigate(); // Use useNavigate from react-router
 
@@ -189,27 +199,121 @@ function App({user, setUser}) {
         // Set nodes and edges in React Flow
         setNodes(formattedNodes);
         setEdges(flowEdges);
-        
-        // Set up Yjs document observation for real-time updates
-        const tasksObserver = () => {
+          // Set up document-level observer for real-time updates
+        // This will catch ALL Yjs document changes, including nested property updates
+        handler.provider.document.on('update', () => {
+            console.log('Yjs document updated - rebuilding React Flow data');
             const { nodes: updatedNodes, edges: updatedEdges } = handler.getReactFlowData();
             
-            const formattedNodes = updatedNodes.map(node => ({
-                ...node,
-                style: createNodeStyle(node.data.color || '#ffffff', node.data.completed),
-                sourcePosition: 'right',
-                targetPosition: 'left'
-            }));
+            // Update nodes with more granularity to preserve local states
+            setNodes((currentNodes) => {
+                // Create maps for efficient lookups
+                const currentNodesMap = new Map(currentNodes.map(node => [node.id, node]));
+                const updatedNodesMap = new Map(updatedNodes.map(node => [node.id, node]));
+                
+                // Track which nodes have changed to avoid unnecessary updates
+                let hasChanges = false;
+                
+                // Process all current and updated nodes
+                const mergedNodes = currentNodes.map(currentNode => {
+                    const updatedNode = updatedNodesMap.get(currentNode.id);
+                    
+                    // Node doesn't exist in YJS anymore (deleted by another user)
+                    if (!updatedNode) {
+                        hasChanges = true;
+                        return null;
+                    }
+                    
+                    // Check if any YJS-synced properties have changed
+                    const positionChanged = 
+                        currentNode.position.x !== updatedNode.position.x || 
+                        currentNode.position.y !== updatedNode.position.y;
+                    
+                    const dataChanged = 
+                        currentNode.data.label !== updatedNode.data.label ||
+                        currentNode.data.completed !== updatedNode.data.completed ||
+                        currentNode.data.color !== updatedNode.data.color;
+                    
+                    // If nothing changed, keep current node reference
+                    if (!positionChanged && !dataChanged) {
+                        return currentNode;
+                    }
+                    
+                    // Some property changed - merge updated values with current state
+                    hasChanges = true;
+                    return {
+                        ...currentNode, // Keep all current properties
+                        position: updatedNode.position, // Update position from YJS
+                        data: {
+                            ...currentNode.data, // Keep other data properties
+                            label: updatedNode.data.label, // Update synced properties
+                            completed: updatedNode.data.completed,
+                            color: updatedNode.data.color,
+                        },
+                        style: createNodeStyle(
+                            updatedNode.data.color,
+                            updatedNode.data.completed,
+                            currentNode.selected,
+                            currentNode.draft
+                        ),
+                    };
+                }).filter(Boolean); // Remove null entries (deleted nodes)
+                
+                // Add new nodes from YJS that don't exist in current state
+                updatedNodes.forEach(updatedNode => {
+                    if (!currentNodesMap.has(updatedNode.id)) {
+                        hasChanges = true;
+                        // Format new node with proper styles
+                        mergedNodes.push({
+                            ...updatedNode,
+                            style: createNodeStyle(
+                                updatedNode.data.color || '#ffffff',
+                                updatedNode.data.completed,
+                                false, // not selected
+                                false  // not draft
+                            ),
+                            sourcePosition: 'right',
+                            targetPosition: 'left'
+                        });
+                    }
+                });
+                
+                // Only return new array if there were changes
+                return hasChanges ? mergedNodes : currentNodes;
+            });
             
-            setNodes(formattedNodes);
-            setEdges(updatedEdges);
-        };
-        
-        // Observe changes in the Yjs document
-        handler.tasks.observe(tasksObserver);
-        handler.dependencies.observe(tasksObserver);
-        
-        return { handler };
+            // Handle edges - similar approach
+            setEdges((currentEdges) => {
+                const currentEdgesMap = new Map(currentEdges.map(edge => [edge.id, edge]));
+                const updatedEdgesMap = new Map(updatedEdges.map(edge => [edge.id, edge]));
+                
+                let hasEdgeChanges = false;
+                
+                // Keep existing edges that are still in YJS data, remove deleted ones
+                const mergedEdges = currentEdges
+                    .map(edge => {
+                        // Edge was deleted in YJS
+                        if (!updatedEdgesMap.has(edge.id)) {
+                            hasEdgeChanges = true;
+                            return null;
+                        }
+                        
+                        // No changes to the edge
+                        return edge;
+                    })
+                    .filter(Boolean);
+                
+                // Add new edges from YJS
+                updatedEdges.forEach(updatedEdge => {
+                    if (!currentEdgesMap.has(updatedEdge.id)) {
+                        hasEdgeChanges = true;
+                        mergedEdges.push(updatedEdge);
+                    }
+                });
+                
+                return hasEdgeChanges ? mergedEdges : currentEdges;
+            });
+        });
     }, [user, createNodeStyle]);
     
     useEffect(() => {
@@ -292,13 +396,79 @@ function App({user, setUser}) {
             })
             .catch(err => console.error(err));
         setDeleteProjectDialog(false);
-    }, [currentProject]);
-
-    const handleCancelDeleteProject = useCallback(() => {
+    }, [currentProject]);    const handleCancelDeleteProject = useCallback(() => {
         setDeleteProjectDialog(false);
     }, []);
-
-    // --- Node Management ---
+      // Helper function to synchronize node changes with YJS
+    const syncNodeWithYJS = useCallback((nodeId) => {
+        if (!yjsHandlerRef.current) return;
+        
+        // Find the current node data in React state
+        const node = nodesRef.current.find(n => n.id === nodeId);
+        if (!node || node.draft) return; // Skip missing or draft nodes
+        
+        // Update all properties in YJS
+        yjsHandlerRef.current.updateTask(nodeId, {
+            title: node.data.label,
+            posX: node.position.x,
+            posY: node.position.y,
+            completed: node.data.completed,
+            color: node.data.color
+        });
+    }, []);
+    
+    // Function to add a node position update to the pending queue
+    const queuePositionUpdate = useCallback((nodeId) => {
+        if (!yjsHandlerRef.current) return;
+        
+        // Find the current node data in React state
+        const node = nodesRef.current.find(n => n.id === nodeId);
+        if (!node || node.draft) return; // Skip missing or draft nodes
+        
+        // Add to pending updates map
+        pendingPositionUpdatesRef.current.set(nodeId, {
+            posX: node.position.x,
+            posY: node.position.y
+        });
+        
+        // Schedule processing if not already scheduled
+        if (!isProcessingPositionUpdatesRef.current) {
+            isProcessingPositionUpdatesRef.current = true;
+            requestAnimationFrame(processPositionUpdates);
+        }
+    }, []);
+      // Process all pending position updates in a batch
+    const processPositionUpdates = useCallback(() => {
+        if (!yjsHandlerRef.current || pendingPositionUpdatesRef.current.size === 0) {
+            isProcessingPositionUpdatesRef.current = false;
+            return;
+        }
+        
+        const updateCount = pendingPositionUpdatesRef.current.size;
+        console.log(`Processing batch of ${updateCount} throttled position updates`);
+          // Process pending updates
+        for (const [nodeId, position] of pendingPositionUpdatesRef.current) {
+            const node = nodesRef.current.find(n => n.id === nodeId);
+            if (!node || node.draft) continue; // Skip missing or draft nodes
+            
+            // Update only position properties in YJS - optimization to reduce data transfer
+            yjsHandlerRef.current.updateTask(nodeId, {
+                posX: position.posX,
+                posY: position.posY
+            });
+        }
+        
+        // Clear the map after processing
+        pendingPositionUpdatesRef.current.clear();
+        
+        // Schedule next batch if new updates arrived during processing
+        if (pendingPositionUpdatesRef.current.size > 0) {
+            requestAnimationFrame(processPositionUpdates);
+        } else {
+            isProcessingPositionUpdatesRef.current = false;
+        }
+    }, []);
+      // --- Node Management ---
     const onNodesChange = useCallback(
         (changes) =>
             setNodes((prev) => {
@@ -309,12 +479,20 @@ function App({user, setUser}) {
                 changes.forEach((c) => changed.set(c.id, c));
 
                 let mutated = false;
+                
+                // Track node position updates for YJS synchronization
+                const positionChanges = new Set();
 
                 const next = prev.map((node) => {
                     const change = changed.get(node.id);
                     if (!change) return node; // untouched → keep original reference
 
                     mutated = true;
+                    
+                    // Detect position changes that need to be synchronized with YJS
+                    if (change.type === "position" && !node.draft) {
+                        positionChanges.add(node.id);
+                    }
 
                     /** Let React‑Flow merge the positional / selection changes */
                     const updated = applyNodeChanges([change], [node])[0];
@@ -336,34 +514,34 @@ function App({user, setUser}) {
                         }
                         : updated;
                 });
+                
+                // Use throttled position updates for better performance
+                if (positionChanges.size > 0) {
+                    // Queue position updates instead of immediately syncing
+                    requestAnimationFrame(() => {
+                        positionChanges.forEach(nodeId => queuePositionUpdate(nodeId));
+                    });
+                }
 
                 return mutated ? next : prev;
             }),
-        [createNodeStyle]
-    );
-
-    const onNodeDragStop = useCallback(
+        [createNodeStyle, queuePositionUpdate]
+    );    const onNodeDragStop = useCallback(
         (event, node) => {
+            // Ignore draft nodes
+            if (node.draft) return;
+            
             // Wait one frame so React-Flow finishes updating the node state
             requestAnimationFrame(() => {
-                const latest = nodesRef.current.find(n => n.id === node.id);
-                if (!latest || latest.draft) return;   // ignore missing or AI-draft nodes
-
-                if (yjsHandlerRef.current) {
-                    yjsHandlerRef.current.updateTask(latest.id, {
-                        title: latest.data.label,
-                        posX: latest.position.x,
-                        posY: latest.position.y,
-                        completed: latest.data.completed,
-                        color: latest.data.color
-                    });
-                }
+                // Clear any pending throttled updates for this node
+                pendingPositionUpdatesRef.current.delete(node.id);
+                
+                // Immediately sync the final position with YJS
+                syncNodeWithYJS(node.id);
             });
         },
-        []  // No dependencies needed as we're using refs for current state
-    );
-
-    const addNewNode = useCallback(
+        [syncNodeWithYJS]
+    );const addNewNode = useCallback(
         (position) => createAddNewNode({ 
             newTaskTitle, 
             currentProject, 
@@ -458,10 +636,8 @@ function App({user, setUser}) {
             }
         },
         [contextMenu, selectedSource, selectedUnlinkSource, edges, onConnect]
-    );
-
-    const handleToggleCompleted = useCallback((node) => {
-        if (!yjsHandlerRef.current) return;
+    );    const handleToggleCompleted = useCallback((node) => {
+        if (node.draft) return;
         
         const updatedCompleted = !node.data.completed;
         
@@ -478,18 +654,12 @@ function App({user, setUser}) {
             )
         );
 
-        // Update Yjs document
-        yjsHandlerRef.current.updateTask(node.id, {
-            title: node.data.label,
-            posX: node.position.x,
-            posY: node.position.y,
-            completed: updatedCompleted,
-            color: node.data.color
+        // Schedule YJS update after React state update
+        requestAnimationFrame(() => {
+            syncNodeWithYJS(node.id);
         });
-    }, [createNodeStyle]);
-
-    const handleUpdateNodeColor = useCallback((node, color) => {
-        if (!yjsHandlerRef.current) return;
+    }, [createNodeStyle, syncNodeWithYJS]);    const handleUpdateNodeColor = useCallback((node, color) => {
+        if (node.draft) return;
         
         // Update React state
         setNodes(prev =>
@@ -504,63 +674,47 @@ function App({user, setUser}) {
             )
         );
 
-        // Update Yjs document
-        yjsHandlerRef.current.updateTask(node.id, {
-            title: node.data.label,
-            posX: node.position.x,
-            posY: node.position.y,
-            completed: node.data.completed,
-            color
+        // Schedule YJS update after React state update
+        requestAnimationFrame(() => {
+            syncNodeWithYJS(node.id);
         });
-    }, [createNodeStyle]);
+    }, [createNodeStyle, syncNodeWithYJS]);
 
     const handleEditNode = useCallback((node) => {
         setNodeToEdit(node);
         setEditDialogOpen(true);
-    }, []);
-
-    const handleEditSubmit = useCallback((newTitle) => {
-        if (newTitle && newTitle.trim() && nodeToEdit && yjsHandlerRef.current) {
+    }, []);    const handleEditSubmit = useCallback((newTitle) => {
+        if (newTitle && newTitle.trim() && nodeToEdit && !nodeToEdit.draft) {
             // Update React state
             setNodes(prev =>
                 prev.map(n => n.id === nodeToEdit.id ? { ...n, data: { ...n.data, label: newTitle } } : n)
             );
 
-            // Update Yjs document
-            yjsHandlerRef.current.updateTask(nodeToEdit.id, {
-                title: newTitle,
-                posX: nodeToEdit.position.x,
-                posY: nodeToEdit.position.y,
-                color: nodeToEdit.data.color,
-                completed: nodeToEdit.data.completed
+            // Schedule YJS update after React state update
+            requestAnimationFrame(() => {
+                syncNodeWithYJS(nodeToEdit.id);
             });
         }
         setEditDialogOpen(false);
         setNodeToEdit(null);
-    }, [nodeToEdit]);
+    }, [nodeToEdit, syncNodeWithYJS]);
 
     const handleCancelEdit = useCallback(() => {
         setEditDialogOpen(false);
         setNodeToEdit(null);
-    }, []);
-
-    const handleDeleteNode = useCallback((node) => {
+    }, []);    const handleDeleteNode = useCallback((node) => {
+        if (node.draft) return;
         if (!yjsHandlerRef.current) return;
         
-        // Delete from Yjs document
+        // Delete from Yjs document - this will trigger the YJS observer
+        // which will update the React state automatically
         yjsHandlerRef.current.deleteTask(node.id);
-        
-        // Update React state
-        setNodes(prev => prev.filter(n => n.id !== node.id));
-        setEdges(prev => prev.filter(e => e.source !== node.id && e.target !== node.id));
     }, []);
 
     const handleDeleteSubtree = useCallback((node) => {
         setNodeToDeleteSubtree(node);
         setDeleteSubtreeDialog(true);
-    }, []);
-
-    const handleConfirmDeleteSubtree = useCallback(() => {
+    }, []);    const handleConfirmDeleteSubtree = useCallback(() => {
         if (!nodeToDeleteSubtree || !yjsHandlerRef.current) return;
         
         const toDelete = new Set();
@@ -571,14 +725,11 @@ function App({user, setUser}) {
         };
         dfs(nodeToDeleteSubtree.id);
         
-        // Delete tasks from Yjs document
+        // Delete tasks from Yjs document - this will trigger the YJS observer
+        // which will update the React state automatically
         toDelete.forEach(nodeId => {
             yjsHandlerRef.current.deleteTask(nodeId);
         });
-        
-        // Update React state
-        setNodes(prev => prev.filter(n => !toDelete.has(n.id)));
-        setEdges(prev => prev.filter(e => !toDelete.has(e.source) && !toDelete.has(e.target)));
         
         setDeleteSubtreeDialog(false);
         setNodeToDeleteSubtree(null);
@@ -855,8 +1006,8 @@ function App({user, setUser}) {
         }
 
         try {
-            // Optimistically clear the drafts in UI
-            setNodes((nodes) =>
+            // Optimistically clear the drafts in UI             // Update React state first - remove draft markers
+             setNodes((nodes) =>
                 nodes.map((n) =>
                     n.draft
                         ? {
@@ -870,6 +1021,16 @@ function App({user, setUser}) {
             setEdges((edges) =>
                 edges.map((e) => (e.draft ? { ...e, draft: false } : e))
             );
+            
+            // After React state updates, synchronize all previously draft nodes with YJS
+            requestAnimationFrame(() => {
+                nodesRef.current.forEach(node => {
+                    // Find nodes that were drafts before accepting
+                    if (prevNodes.some(prevNode => prevNode.id === node.id && prevNode.draft)) {
+                        syncNodeWithYJS(node.id);
+                    }
+                });
+            });
 
             const res = await fetch('/api/bulk-change', {
                 method: 'POST',
@@ -977,18 +1138,16 @@ function App({user, setUser}) {
                 };
             }
             return node;
-        });
-
-        setNodes(newNodes);
-        newNodes.forEach(node => {
-            !node.data.draft &&
-                yjsHandlerRef.current.updateTask(node.id, {
-                    title: node.data.label,
-                    posX: node.position.x,
-                    posY: node.position.y,
-                    color: node.data.color,
-                    completed: node.data.completed
-                });
+        });        setNodes(newNodes);
+        
+        // Schedule synchronization after React state update
+        requestAnimationFrame(() => {
+            // Synchronize all nodes with YJS
+            newNodes.forEach(node => {
+                if (!node.draft) {
+                    syncNodeWithYJS(node.id);
+                }
+            });
         });
     }, []);
 
@@ -1205,12 +1364,12 @@ function App({user, setUser}) {
                 onSubmit={handleConfirmCreateProject}
                 onCancel={handleCancelCreateProject}
             />
-            
-            {/* Checksum indicator - appears at the bottom left of the screen */}
+              {/* Checksum indicator - appears at the bottom left of the screen */}
             <ChecksumIndicator 
                 nodes={nodes}
                 edges={edges}
                 currentProject={currentProject}
+                yjsHandler={yjsHandler}
             />
         </div>
     );

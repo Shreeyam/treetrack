@@ -457,30 +457,6 @@ function App({ user, setUser }) {
         });
     }, []);
 
-    // Helper function to synchronize multiple nodes with YJS in a single transaction
-    const syncMultipleNodesWithYJS = useCallback((nodeIds) => {
-        if (!yjsHandlerRef.current || !yjsHandlerRef.current.updateMultipleTasks) return;
-
-        const updates = nodeIds.map(nodeId => {
-            const node = nodesRef.current.find(n => n.id === nodeId);
-            if (!node || node.draft) return null;
-
-            return {
-                id: nodeId,
-                data: {
-                    title: node.data.label,
-                    posX: node.position.x,
-                    posY: node.position.y,
-                    completed: node.data.completed,
-                    color: node.data.color
-                }
-            };
-        }).filter(Boolean);
-
-        if (updates.length > 0) {
-            yjsHandlerRef.current.updateMultipleTasks(updates);
-        }
-    }, []);
     // --- Node dragging --------------------------------------------------------
     // Track which nodes the local user is currently dragging
     const locallyDraggedNodes = useRef(new Set());

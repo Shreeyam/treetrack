@@ -1,7 +1,5 @@
 // src/utils/nodeFunctions.js
 
-import { v4 as uuidv4 } from 'uuid'
-
 // Helper to add a new node using Yjs
 export function createAddNewNode({
     newTaskTitle,

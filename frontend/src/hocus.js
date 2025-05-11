@@ -16,14 +16,6 @@ export const initializeHocusProvider = (projectId, user) => {
   // --- Awareness helpers --------------------------------------------------
   const awareness = provider.awareness;
 
-  /** broadcast the current drag position (or clear when null) */
-  const setDragState = (nodeId, posX, posY) => {
-    awareness.setLocalStateField(
-      "drag",
-      nodeId ? { nodeId, posX, posY } : null,
-    );
-  };
-
   /** Batch update multiple node drag positions in a single awareness update */
   const setBatchDragState = (dragNodes) => {
     if (!dragNodes || dragNodes.length === 0) {
@@ -177,7 +169,6 @@ export const initializeHocusProvider = (projectId, user) => {
   return {
     provider,
     awareness,
-    setDragState,
     setBatchDragState,
     tasks,
     dependencies,

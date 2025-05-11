@@ -13,6 +13,17 @@ export const initializeHocusProvider = (projectId, user) => {
     //token: user?.id?.toString(), // Pass user ID for authentication
   });
 
+  // --- Awareness helpers --------------------------------------------------
+  const awareness = provider.awareness;
+
+  /** broadcast the current drag position (or clear when null) */
+  const setDragState = (nodeId, posX, posY) => {
+    awareness.setLocalStateField(
+      "drag",
+      nodeId ? { nodeId, posX, posY } : null,
+    );
+  };
+
   // Define our Yjs data structures
   const tasks = provider.document.getMap("tasks");
   const dependencies = provider.document.getMap("dependencies");
@@ -66,9 +77,7 @@ export const initializeHocusProvider = (projectId, user) => {
     depsToDelete.forEach(depId => {
       dependencies.delete(depId);
     });
-    
-    // Clear any selections for this task
-    //selections.delete(taskId);
+
     
     return true;
   };
@@ -133,6 +142,8 @@ export const initializeHocusProvider = (projectId, user) => {
   // Return provider and helper functions
   return {
     provider,
+    awareness,
+    setDragState,
     tasks,
     dependencies,
     addTask,

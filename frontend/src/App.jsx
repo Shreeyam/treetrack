@@ -17,6 +17,7 @@ import ChecksumIndicator from './components/misc/ChecksumIndicator';
 import { createAddNewNode, mapWithChangeDetection } from './utils/nodeFunctions';
 import { useNavigate } from 'react-router';
 import { PromptDialog } from '@/components/ui/prompt-dialog';
+import throttle from 'lodash.throttle';
 
 // Memoize imported components
 const MemoAuthForm = React.memo(AuthForm);
@@ -189,7 +190,6 @@ function App({ user, setUser }) {
         // This will catch ALL Yjs document changes, including nested property updates
         handler.provider.document.on('update', () => {
             const { nodes: updatedNodes, edges: updatedEdges } = handler.getReactFlowData();
-
             // Update nodes with more granularity to preserve local states
             setNodes((currentNodes) => {
                 // Create maps for efficient lookups
@@ -298,6 +298,34 @@ function App({ user, setUser }) {
 
                 return hasEdgeChanges ? mergedEdges : currentEdges;
             });
+        });        // Awareness: live dragging from all users
+        handler.awareness.on("change", () => {
+            const states = Array.from(handler.awareness.getStates().values());
+            // Collect all currently dragged nodes from all users
+            const dragMap = Object.fromEntries(
+                states
+                    .filter(s => s.drag)
+                    .map(s => [s.drag.nodeId, { x: s.drag.posX, y: s.drag.posY }]),
+            );
+
+            // If nothing is being dragged, no work:
+            if (!Object.keys(dragMap).length) return;
+
+            // Move the nodes *only* visually – do NOT call syncNodeWithYJS here
+            // But also filter out nodes that the local user is currently dragging
+            setNodes(nodes =>
+                nodes.map(n => {
+                    // Skip nodes that the local user is currently dragging to avoid jitter
+                    if (locallyDraggedNodes.current && locallyDraggedNodes.current.has(n.id)) {
+                        return n;
+                    }
+                    
+                    // Apply remote drag updates
+                    return dragMap[n.id]
+                        ? { ...n, position: dragMap[n.id] }   // <- live update!
+                        : n;
+                }),
+            );
         });
     }, [user, createNodeStyle]);
 
@@ -401,14 +429,32 @@ function App({ user, setUser }) {
             color: node.data.color
         });
     }, []);
+    // --- Node dragging --------------------------------------------------------
+    // Track which nodes the local user is currently dragging
+    const locallyDraggedNodes = useRef(new Set());
+      // 1. every tiny move → awareness
+    const onNodeDrag = useCallback((_, node) => {
+        // Add this node to our locally dragged set
+        locallyDraggedNodes.current.add(node.id);
+        
+        // Broadcast to other users - using throttle to reduce network traffic
+        // We don't need useCallback here since throttle returns a stable function reference
+        throttle((nodeId, x, y) => {
+            yjsHandlerRef.current?.setDragState(nodeId, x, y);
+        }, 25)(node.id, node.position.x, node.position.y);
+    }, []);
 
-
-    // --- Node Management ---
+    // 2. drop → clear awareness + persist final position
     const onNodeDragStop = useCallback(
         (event, node) => {
-            // Ignore draft nodes
             if (node.draft) return;
-
+            
+            // Remove from locally dragged set
+            locallyDraggedNodes.current.delete(node.id);
+            
+            // Clear awareness state
+            yjsHandlerRef.current?.setDragState(null);
+            
             // Wait one frame so React-Flow finishes updating the node state
             requestAnimationFrame(() => {
                 // Immediately sync the final position with YJS
@@ -416,7 +462,9 @@ function App({ user, setUser }) {
             });
         },
         [syncNodeWithYJS]
-    ); const addNewNode = useCallback(
+    );
+
+    const addNewNode = useCallback(
         (position) => createAddNewNode({
             newTaskTitle,
             currentProject,
@@ -1218,6 +1266,7 @@ function App({ user, setUser }) {
                     onConnect={onConnect}
                     onNodeMouseDown={handleNodeClick}
                     onNodeContextMenu={handleNodeContextMenu}
+                    onNodeDrag={onNodeDrag}
                     onNodeDragStop={onNodeDragStop}
                     onPaneClick={handlePaneClick}
                     contextMenu={contextMenu}

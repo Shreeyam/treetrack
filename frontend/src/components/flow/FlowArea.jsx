@@ -20,6 +20,7 @@ const FlowArea = memo(({
     onNodeClick,
     onNodeContextMenu,
     onNodeDragStop,
+    onNodeDrag,        // ← add
     onPaneClick,
     onSelectionChange,
     contextMenu,
@@ -120,6 +121,11 @@ const FlowArea = memo(({
         });
     }, [nodes, onNodeDragStop]);
 
+    const handleNodeDrag = useCallback((event, draggedNode) => {
+        const selected = nodes.filter(n => n.selected || n.id === draggedNode.id);
+        selected.forEach(n => onNodeDrag?.(event, n));
+    }, [nodes, onNodeDrag]);
+
     const handleKeyDown = useCallback((event) => {
         // Only process if an input field isn't currently focused
         if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
@@ -171,7 +177,8 @@ const FlowArea = memo(({
                 onNodeClick={onNodeClick}
                 onNodeContextMenu={handleNodeContextMenu}
                 onEdgeContextMenu={handleEdgeContextMenu}
-                onNodeDragStop={handleNodeDragStop}
+                onNodeDrag={handleNodeDrag}          // ← live moves
+                onNodeDragStop={handleNodeDragStop}  // ← final commit
                 onSelectionChange={onSelectionChange}
                 elementsSelectable={true}
                 selectionOnDrag={true}

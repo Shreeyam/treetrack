@@ -55,7 +55,8 @@ function App({ user, setUser }) {
     const [nodeToDeleteSubtree, setNodeToDeleteSubtree] = useState(null);
     const [createProjectDialog, setCreateProjectDialog] = useState(false);
     const [yjsHandler, setYjsHandler] = useState(null);
-
+    const [draftTaskIds, setDraftTaskIds] = useState([]);   // NEW
+    const [draftEdgeIds, setDraftEdgeIds] = useState([]);   // NEW
     // React Flow
     const reactFlowWrapper = useRef(null);
     const [reactFlowInstance, setReactFlowInstance] = useState(null);
@@ -756,59 +757,94 @@ function App({ user, setUser }) {
     }, []);
 
     const handleGenerativeEdit = useCallback(async (projectData) => {
-        // Take a snapshot *before* we start mutating
-        setPrevNodes(nodesRef.current);
-        setPrevEdges(edgesRef.current);
         const { tasks: aiTasks, dependencies: aiDeps } = projectData;
-        const { provider, addTask, updateTask, deleteTask, addDependency, deleteDependency, undoManager } = yjsHandlerRef.current;
+        const { addTask, updateTask, deleteTask, addDependency, deleteDependency, provider, undoManager } = yjsHandlerRef.current;
+
+        // Keep track of the real IDs we end up using for each AI task
+        const idMap = new Map();
+        const newDraftNodeIds = [];
+        const newDraftEdgeIds = [];
 
         provider.document.transact(() => {
-            // 1) Tasks
             aiTasks.forEach(t => {
                 const exists = yjsHandlerRef.current.tasks.has(t.id);
+
                 if (t.delete) {
                     deleteTask(t.id);
-                } else if (!exists) {
-                    // brand-new
+                    return;
+                }
+
+                if (!exists) {
+                    // brand-new: *we* generate the UUID
+                    const realId = uuidv4();
                     addTask({
+                        id: realId,
                         title: t.title,
                         posX: t.posX,
                         posY: t.posY,
                         completed: t.completed,
                         color: t.color,
                     });
+                    idMap.set(t.id, realId);
+                    newDraftNodeIds.push(realId);
                 } else if (!t.no_change) {
-                    // existing, but modified
                     updateTask(t.id, {
                         title: t.title,
                         posX: t.posX,
                         posY: t.posY,
                         completed: t.completed,
-                        color: t.color,
+                        color: t.color
                     });
+                    newDraftNodeIds.push(t.id);
                 }
             });
 
-            // 2) Dependencies
             aiDeps.forEach(d => {
                 if (d.delete) {
                     deleteDependency(d.id);
-                } else if (!prevEdges.find(e => e.id === d.id)) {
-                    addDependency(d.from_task.toString(), d.to_task.toString());
+                } else {
+                    // remap any AI task-IDs to our real IDs
+                    const from = idMap.get(d.from_task) || d.from_task;
+                    const to = idMap.get(d.to_task) || d.to_task;
+                    addDependency(from, to);
+                    newDraftEdgeIds.push(d.id);
                 }
-                // (you could also handle “update” if you allow changing existing edges)
             });
-        }, "generative"); // << mark this whole block so UndoManager picks it up
+        }, "generative");
 
-        // Keep a list of IDs for styling “draft” nodes/edges in your React UI:
-        setDraftTaskIds(aiTasks.map(t => t.id));
-        setDraftEdgeIds(aiDeps.map(d => d.id));
+        // then mark them as drafts
+        setDraftTaskIds(newDraftNodeIds);
+        setDraftEdgeIds(newDraftEdgeIds);
+
+        setNodes(prev =>
+            prev.map(n =>
+                newDraftNodeIds.includes(n.id)
+                    ? { ...n, draft: true, style: createNodeStyle(n.data.color, n.data.completed, n.selected, true) }
+                    : n
+            )
+        );
     }, [prevNodes, prevEdges]);
     const handleAcceptChanges = useCallback(() => {
         // simply clear the undo‐stack so you can no longer undo
         yjsHandlerRef.current.undoManager.clear();
         setDraftTaskIds([]);
         setDraftEdgeIds([]);
+        setNodes(prev =>
+            prev.map(n =>
+                n.draft
+                    ? {
+                        ...n,
+                        draft: false,
+                        style: createNodeStyle(
+                            n.data.color,
+                            n.data.completed,
+                            n.selected,
+                            false           // stripes off
+                        ),
+                    }
+                    : n
+            )
+        );
         setPrevNodes([]);    // if you still used these
         setPrevEdges([]);
     }, []);
@@ -821,6 +857,22 @@ function App({ user, setUser }) {
         yjsHandlerRef.current.undoManager.clear();
         setDraftTaskIds([]);
         setDraftEdgeIds([]);
+        setNodes(prev =>
+            prev.map(n =>
+                n.draft
+                    ? {
+                        ...n,
+                        draft: false,
+                        style: createNodeStyle(
+                            n.data.color,
+                            n.data.completed,
+                            n.selected,
+                            false
+                        ),
+                    }
+                    : n
+            )
+        );
     }, []);
 
     // --- Layout Management ---

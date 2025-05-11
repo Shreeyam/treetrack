@@ -18,6 +18,7 @@ import { createAddNewNode, mapWithChangeDetection } from './utils/nodeFunctions'
 import { useNavigate } from 'react-router';
 import { PromptDialog } from '@/components/ui/prompt-dialog';
 import throttle from 'lodash.throttle';
+import { v4 as uuidv4 } from 'uuid';
 
 // Memoize imported components
 const MemoAuthForm = React.memo(AuthForm);
@@ -476,7 +477,7 @@ function App({ user, setUser }) {
                     );
                 },
                 30,                 // wait
-                { leading: false }   // (optional) skip the immediate first call
+                { leading: true }   // (optional) skip the immediate first call
             ),
         []                       // ← create only once
     );
@@ -504,6 +505,7 @@ function App({ user, setUser }) {
         selectedNodesRef.current = nodesToUpdate;
 
         // Use the throttled batch update with adaptive timing
+
         throttledBatchUpdate(nodesToUpdate);
     }, []);
 
@@ -753,366 +755,73 @@ function App({ user, setUser }) {
         setNodeToDeleteSubtree(null);
     }, []);
 
-    const handleGenerativeEdit = useCallback((data) => {
-        // --- Capture previous state BEFORE applying changes ---
-        setPrevNodes(nodesRef.current); // Use refs for the most current state
+    const handleGenerativeEdit = useCallback(async (projectData) => {
+        // Take a snapshot *before* we start mutating
+        setPrevNodes(nodesRef.current);
         setPrevEdges(edgesRef.current);
+        const { tasks: aiTasks, dependencies: aiDeps } = projectData;
+        const { provider, addTask, updateTask, deleteTask, addDependency, deleteDependency, undoManager } = yjsHandlerRef.current;
 
-        // Create maps for efficient lookup of existing items
-        const prevNodeMap = new Map(nodesRef.current.map(node => [node.id, node]));
-        const prevEdgeMap = new Map(edgesRef.current.map(edge => [edge.id, edge]));
-
-        // Compute the current maximum IDs for nodes and edges (assuming numeric IDs in string format)
-        const maxNodeId = nodesRef.current.length > 0
-            ? Math.max(...nodesRef.current.map(node => parseInt(node.id, 10)))
-            : 0;
-        const maxEdgeId = edgesRef.current.length > 0
-            ? Math.max(...edgesRef.current.map(edge => parseInt(edge.id, 10)))
-            : 0;
-
-        let nextNodeId = maxNodeId;
-        let nextEdgeId = maxEdgeId;
-
-        // Create a mapping from the incoming task IDs to the assigned IDs.
-        // This is needed so that dependencies referencing new tasks can be updated accordingly.
-        const taskIdMapping = {};
-
-        // Process tasks to create the updated nodes. For new tasks (i.e. not found in prevNodeMap),
-        // assign a new auto-incremented ID.
-        const updatedNodes = data.tasks.map(task => {
-            const origId = task.id.toString();
-
-            // --- Handle no_change --- 
-            if (task.no_change) {
-                const existingNode = prevNodeMap.get(origId);
-                if (existingNode) {
-                    // Return the existing node as is, ensuring draft is false
-                    return { ...existingNode, draft: false };
-                } else {
-                    // Should not happen if AI follows instructions, but handle defensively
-                    console.warn(`Task ${origId} marked no_change but not found in previous state.`);
-                    return null; // Or handle as an error
+        provider.document.transact(() => {
+            // 1) Tasks
+            aiTasks.forEach(t => {
+                const exists = yjsHandlerRef.current.tasks.has(t.id);
+                if (t.delete) {
+                    deleteTask(t.id);
+                } else if (!exists) {
+                    // brand-new
+                    addTask({
+                        title: t.title,
+                        posX: t.posX,
+                        posY: t.posY,
+                        completed: t.completed,
+                        color: t.color,
+                    });
+                } else if (!t.no_change) {
+                    // existing, but modified
+                    updateTask(t.id, {
+                        title: t.title,
+                        posX: t.posX,
+                        posY: t.posY,
+                        completed: t.completed,
+                        color: t.color,
+                    });
                 }
-            }
-            // --- End handle no_change ---
+            });
 
-            // If the task has a delete flag set to true, mark it for deletion.
-            if (task.delete) {
-                return { id: origId, delete: true };
-            }
-
-            // Determine if this task is new. If it's not in the previous state, assign a new ID.
-            let assignedId;
-            if (prevNodeMap.has(origId)) {
-                assignedId = origId;
-            } else {
-                // Avoid reassigning a new ID if we've already done so in this update
-                if (taskIdMapping[origId]) {
-                    assignedId = taskIdMapping[origId];
-                } else {
-                    nextNodeId += 1;
-                    assignedId = nextNodeId.toString();
-                    taskIdMapping[origId] = assignedId;
+            // 2) Dependencies
+            aiDeps.forEach(d => {
+                if (d.delete) {
+                    deleteDependency(d.id);
+                } else if (!prevEdges.find(e => e.id === d.id)) {
+                    addDependency(d.from_task.toString(), d.to_task.toString());
                 }
-            }
-
-            // Also map existing tasks for dependency lookups
-            if (!taskIdMapping[origId]) {
-                taskIdMapping[origId] = assignedId;
-            }
-
-            const existingNode = prevNodeMap.get(origId);
-            const isDraft = true; // Mark all AI suggestions as draft initially
-            // Preserve the original position if the node exists; otherwise, use the incoming position.
-            const position = { x: task.posX, y: task.posY };
-            const color = (task.color && task.color.trim() !== "")
-                ? task.color
-                : (existingNode ? existingNode.data.color : '#ffffff');
-            const completed = task.completed === 1;
-
-            return {
-                id: assignedId,
-                data: { label: task.title, completed, color },
-                position: position,
-                style: createNodeStyle(color, completed, false, isDraft),
-                sourcePosition: 'right',
-                targetPosition: 'left',
-                draft: isDraft
-            };
-        }).filter(node => node !== null); // Filter out any nulls from no_change warning
-
-        // Process dependencies to create the updated edges.
-        // For each dependency, if it does not exist in the current state, assign a new, auto-incremented ID.
-        // Also update the source and target IDs using the taskIdMapping.
-        const updatedEdges = data.dependencies.map(dep => {
-            const origEdgeId = dep.id.toString();
-            // If the dependency has a delete flag set to true, mark it for deletion.
-            if (dep.delete) {
-                return { id: origEdgeId, delete: true };
-            }
-
-            let assignedEdgeId;
-            if (prevEdgeMap.has(origEdgeId)) {
-                assignedEdgeId = origEdgeId;
-            } else {
-                nextEdgeId += 1;
-                assignedEdgeId = nextEdgeId.toString();
-            }
-            // Update source and target based on task mapping (if the task was new).
-            const source = taskIdMapping[dep.from_task.toString()] || dep.from_task.toString();
-            const target = taskIdMapping[dep.to_task.toString()] || dep.to_task.toString();
-
-            // Ensure the source and target nodes for this edge actually exist in the final node list
-            const sourceNodeExists = updatedNodes.some(n => n.id === source && !n.delete) || prevNodeMap.has(source);
-            const targetNodeExists = updatedNodes.some(n => n.id === target && !n.delete) || prevNodeMap.has(target);
-
-            // If either the source or target node is being deleted or doesn't exist, mark the edge for deletion too.
-            if (!sourceNodeExists || !targetNodeExists) {
-                return { id: assignedEdgeId, delete: true };
-            }
-
-            return {
-                id: assignedEdgeId,
-                source,
-                target,
-                markerEnd: { type: 'arrowclosed' },
-                draft: true
-            };
-        });
-
-        // ---- Merge updated nodes ----
-        setNodes((prevNodes) => {
-            const nodeMap = new Map(prevNodes.map((n) => [n.id, n]));
-            updatedNodes.forEach((node) => {
-                if (node.delete) nodeMap.delete(node.id);
-                else nodeMap.set(node.id, node);
+                // (you could also handle “update” if you allow changing existing edges)
             });
-            return [...nodeMap.values()];
-        });
+        }, "generative"); // << mark this whole block so UndoManager picks it up
 
-        // ---- Merge updated edges ----
-        setEdges((prevEdges) => {
-            const edgeMap = new Map(prevEdges.map((e) => [e.id, e]));
-            updatedEdges.forEach((edge) => {
-                if (edge.delete) edgeMap.delete(edge.id);
-                else edgeMap.set(edge.id, edge);
-            });
-
-            // 🔧 FIX starts here
-            const survivingNodeIds = new Set(
-                [...edgeMap.values()]  // use any collection of nodes you already have
-                    .reduce((ids, e) => ids.add(e.source).add(e.target), new Set())
-            );
-            return [...edgeMap.values()].filter(
-                (edge) =>
-                    survivingNodeIds.has(edge.source) && survivingNodeIds.has(edge.target)
-            );
-        });
-    }, [createNodeStyle]);
-
-    const handleAcceptChanges = useCallback(async () => {
-        const currentNodes = nodesRef.current;
-        const currentEdges = edgesRef.current;
-        const projectId = parseInt(currentProjectRef.current, 10);
-        // Build maps of the previous state for quick lookups
-        const prevNodesMap = new Map(prevNodes.map((n) => [n.id, n]));
-        const prevEdgesMap = new Map(prevEdges.map((e) => [e.id, e]));
-
-        const createdTasks = [];
-        const updatedTasks = [];
-        const deletedTaskIds = [];
-
-        const createdDeps = [];
-        const updatedDeps = [];
-        const deletedDepIds = [];
-
-        // 1) Classify nodes
-        for (let node of currentNodes) {
-            // --- Skip nodes that weren't part of the draft changes --- 
-            if (!node.draft && !prevNodesMap.has(node.id)) {
-                // This node existed before and wasn't marked as draft (i.e., wasn't no_change or modified)
-                continue;
-            }
-            // --- If it *was* a draft, process it --- 
-            if (node.draft) {
-                const taskBody = {
-                    title: node.data.label,
-                    posX: node.position.x,
-                    posY: node.position.y,
-                    completed: node.data.completed ? 1 : 0,
-                    color: node.data.color,
-                    project_id: projectId,
-                };
-                if (prevNodesMap.has(node.id)) {
-                    // It existed before and was modified (draft=true)
-                    updatedTasks.push({ id: parseInt(node.id, 10), ...taskBody });
-                } else {
-                    // It's a new node (draft=true)
-                    createdTasks.push({ tempId: node.id, ...taskBody });
-                }
-            }
-        }
-
-        // Deletions: anything in prevNodes that doesn't survive in currentNodes
-        for (let prev of prevNodes) {
-            if (!currentNodes.some((n) => n.id === prev.id)) {
-                deletedTaskIds.push(parseInt(prev.id, 10));
-            }
-        }
-
-        // 2) Classify edges (similar logic, skip non-drafts unless deleted)
-        for (let edge of currentEdges) {
-            if (!edge.draft && !prevEdgesMap.has(edge.id)) {
-                continue;
-            }
-            if (edge.draft) {
-                const depBody = {
-                    // Ensure source/target IDs are integers for the backend
-                    from_task: parseInt(edge.source, 10),
-                    to_task: parseInt(edge.target, 10),
-                    project_id: projectId,
-                };
-
-                if (prevEdgesMap.has(edge.id)) {
-                    updatedDeps.push({ id: parseInt(edge.id, 10), ...depBody });
-                } else {
-                    // Need to map temp task IDs if source/target were new tasks
-                    // Note: This assumes the backend handles mapping temp *edge* IDs implicitly
-                    // If backend needs temp edge IDs mapped, more logic is needed here.
-                    createdDeps.push(depBody);
-                }
-            }
-        }
-
-        for (let prev of prevEdges) {
-            if (!currentEdges.some((e) => e.id === prev.id)) {
-                deletedDepIds.push(parseInt(prev.id, 10));
-            }
-        }
-
-        // 3) Send bulk request (only if there are changes)
-        const payload = {
-            project_id: projectId,
-            tasks: {
-                created: createdTasks,
-                updated: updatedTasks,
-                deleted: deletedTaskIds,
-            },
-            dependencies: {
-                created: createdDeps,
-                updated: updatedDeps,
-                deleted: deletedDepIds,
-            },
-        };
-
-        // Only send if there's something to change
-        if (createdTasks.length === 0 && updatedTasks.length === 0 && deletedTaskIds.length === 0 &&
-            createdDeps.length === 0 && updatedDeps.length === 0 && deletedDepIds.length === 0) {
-            console.log("No changes to accept.");
-            // Reset history even if no changes were sent
-            setPrevNodes([]);
-            setPrevEdges([]);
-            // Clear any potential lingering draft states just in case (though should be handled by no_change)
-            setNodes((nodes) => nodes.map((n) => n.draft ? { ...n, draft: false, style: createNodeStyle(n.data.color, n.data.completed, n.selected, false) } : n));
-            setEdges((edges) => edges.map((e) => e.draft ? { ...e, draft: false } : e));
-            return;
-        }
-
-        try {
-            // Optimistically clear the drafts in UI             // Update React state first - remove draft markers
-            setNodes((nodes) =>
-                nodes.map((n) =>
-                    n.draft
-                        ? {
-                            ...n,
-                            draft: false,
-                            style: createNodeStyle(n.data.color, n.data.completed, n.selected, false),
-                        }
-                        : n
-                )
-            );
-            setEdges((edges) =>
-                edges.map((e) => (e.draft ? { ...e, draft: false } : e))
-            );
-
-            // After React state updates, synchronize all previously draft nodes with YJS
-            requestAnimationFrame(() => {
-                nodesRef.current.forEach(node => {
-                    // Find nodes that were drafts before accepting
-                    if (prevNodes.some(prevNode => prevNode.id === node.id && prevNode.draft)) {
-                        syncNodeWithYJS(node.id);
-                    }
-                });
-            });
-
-            const res = await fetch('/api/bulk-change', {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-
-            if (!res.ok) {
-                throw new Error(`Bulk change failed with status: ${res.status}`);
-            }
-
-            const result = await res.json();
-
-            // 4) Replace temp IDs with real IDs
-            const idMap = new Map();
-            (result.tasksCreated || []).forEach(({ tempId, newId }) => {
-                idMap.set(String(tempId), String(newId));
-            });
-            // Map dependency IDs if backend provides them (assuming it might)
-            // Example: (result.dependenciesCreated || []).forEach(({ tempId, newId }) => { idMap.set(String(tempId), String(newId)); });
-
-            // Patch nodes
-            let patchedNodes = nodesRef.current.map((n) => {
-                const mapped = idMap.get(n.id);
-                return mapped
-                    ? { ...n, id: mapped }
-                    : n;
-            });
-
-            // Patch edges (source, target, and potentially edge ID itself)
-            let patchedEdges = edgesRef.current.map((e) => {
-                let src = idMap.get(e.source) || e.source;
-                let tgt = idMap.get(e.target) || e.target;
-                // let edgeId = idMap.get(e.id) || e.id; // If backend maps edge IDs
-                // return { ...e, id: edgeId, source: src, target: tgt };
-                return { ...e, source: src, target: tgt };
-            });
-
-            // Commit the patched graph
-            setNodes(patchedNodes);
-            setEdges(patchedEdges);
-
-            // Reset history
-            setPrevNodes([]);
-            setPrevEdges([]);
-        } catch (err) {
-            // Roll back on error
-            setNodes(prevNodes);
-            setEdges(prevEdges);
-            console.error('Bulk change failed', err);
-            // Optionally: Show an error message to the user
-        }
-    }, [
-        prevNodes,
-        prevEdges,
-        createNodeStyle,
-        currentProjectRef,
-        nodesRef,
-        edgesRef
-    ]);
-
-    const handleRejectChanges = useCallback(() => {
-        setNodes(prevNodes);
-        setEdges(prevEdges);
-
-        setPrevNodes([]);
-        setPrevEdges([]);
+        // Keep a list of IDs for styling “draft” nodes/edges in your React UI:
+        setDraftTaskIds(aiTasks.map(t => t.id));
+        setDraftEdgeIds(aiDeps.map(d => d.id));
     }, [prevNodes, prevEdges]);
+    const handleAcceptChanges = useCallback(() => {
+        // simply clear the undo‐stack so you can no longer undo
+        yjsHandlerRef.current.undoManager.clear();
+        setDraftTaskIds([]);
+        setDraftEdgeIds([]);
+        setPrevNodes([]);    // if you still used these
+        setPrevEdges([]);
+    }, []);
+
+    // Reject: roll everything back
+    const handleRejectChanges = useCallback(() => {
+        // this will undo *all* the ops in that “generative” transaction
+        yjsHandlerRef.current.undoManager.undo();
+        // now clear the stack so it’s fresh next time
+        yjsHandlerRef.current.undoManager.clear();
+        setDraftTaskIds([]);
+        setDraftEdgeIds([]);
+    }, []);
 
     // --- Layout Management ---
     const handleAutoArrange = useCallback(() => {
@@ -1234,9 +943,9 @@ function App({ user, setUser }) {
                     outline: '2px solid green',
                 };
             } else if (showUpDownstream && isDownstream) {
-                nextStyle = { ...nextStyle, outline: '2px solid #FFD700', boxShadow: '0 0 10px 1px #FFD700' }; // Yellow for downstream + glow
+                nextStyle = { ...nextStyle, outline: '2px solid #FF6A1A', boxShadow: '0 0 10px 1px #FF6A1A' }; // Yellow for downstream + glow
             } else if (showUpDownstream && isUpstream) {
-                nextStyle = { ...nextStyle, outline: '2px solid #9370DB', boxShadow: '0 0 10px 1px #9370DB' }; // Purple for upstream + glow
+                nextStyle = { ...nextStyle, outline: '2px solid #00B8E6', boxShadow: '0 0 10px 1px #00B8E6' }; // Purple for upstream + glow
             } else if (highlightNext) {
                 nextStyle = nextTaskIds.has(node.id)
                     ? { ...nextStyle, opacity: 1 }

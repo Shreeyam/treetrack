@@ -197,7 +197,7 @@ app.delete('/api/projects/:id', isAuthenticated, (req, res) => {
 async function generativeEdit(userInput, projectId, userId, currentState, chatHistory) { // Added chatHistory parameter
   // Define Zod schema that matches our JSON schema
   const TaskSchema = z.object({
-    id: z.number(),
+    id: z.string(),
     title: z.string().optional(),
     posX: z.number().optional(),
     posY: z.number().optional(),
@@ -212,9 +212,9 @@ async function generativeEdit(userInput, projectId, userId, currentState, chatHi
   });
 
   const DependencySchema = z.object({
-    id: z.number(),
-    from_task: z.number(),
-    to_task: z.number(),
+    id: z.string(),
+    from_task: z.string(),
+    to_task: z.string(),
     project_id: z.number().optional(),
     user_id: z.number().optional(),
     delete: z.number().optional()
@@ -236,7 +236,7 @@ async function generativeEdit(userInput, projectId, userId, currentState, chatHi
       "items": {
         "type": "object",
         "properties": {
-          "id": {"type": "integer"},
+          "id": {"type": "string"},
           "title": {"type": "string"},
           "posX": {"type": "number"},
           "posY": {"type": "number"},
@@ -257,9 +257,9 @@ async function generativeEdit(userInput, projectId, userId, currentState, chatHi
       "items": {
         "type": "object",
         "properties": {
-          "id": {"type": "integer"},
-          "from_task": {"type": "integer"},
-          "to_task": {"type": "integer"},
+          "id": {"type": "string"},
+          "from_task": {"type": "string"},
+          "to_task": {"type": "string"},
           "project_id": {"type": "integer"},
           "user_id": {"type": "integer"},
           "delete": {"type": "integer"}
@@ -309,7 +309,7 @@ The graph must show **clear branching**: not every task should just point to the
 Consider the real-world logical flow of a project: planning, preparation, execution, testing, and finishing. Organize the tasks accordingly, and only include meaningful dependencies—avoid unnecessary chaining of unrelated steps.
 
 Each task object must include:
-- id (integer, negative number if a new task or re-use from the input otherwise)
+- id (string (uuid), or negative number if new task or re-use from the input otherwise)
 - **If the task is unchanged from the input state, include ONLY the 'id' and set 'no_change' to true.**
 - **Otherwise (for new or modified tasks), include:**
   - title (short, descriptive name)
@@ -324,7 +324,7 @@ Each task object must include:
 
 Each dependency object represents a link between two tasks. **Only include dependencies that are NEW or MODIFIED or being DELETED.** Omit dependencies that are unchanged from the input.
 Each included dependency object must include:
-- id (integer, negative if new, re-use from input otherwise)
+- id (string (uuid), or negative number if new, re-use from input otherwise)
 - from_task (source task id)
 - to_task (destination task id)
 - project_id and user_id (placeholders that will be filled in later)
@@ -348,7 +348,7 @@ Be thoughtful and detailed. The goal is to create a structured blueprint of the 
     // We still include a user role message, but it might be less critical now.
     { role: "user", content: userPrompt }
   ];
-
+  console.log("messages", messages);
   try {
     // Use the structured output with Zod schema validation
     const completion = await openai.beta.chat.completions.parse({
@@ -398,6 +398,7 @@ app.post('/api/generate', isAuthenticated, isPremium, async (req, res) => {
   try {
     const projectData = await generativeEdit(user_input, project_id, req.session.user.id, current_state, chat_history); // Pass chat_history
     res.json({ data: projectData });
+    console.log(" projectData", projectData);
   } catch (error) {
     res.status(500).json({ error: "Failed to generate project structure" });
   }

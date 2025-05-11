@@ -36,12 +36,18 @@ export const initializeHocusProvider = (projectId, user) => {
   // Define our Yjs data structures
   const tasks = provider.document.getMap("tasks");
   const dependencies = provider.document.getMap("dependencies");
-
+  const undoManager = new Y.UndoManager(
+    [tasks, dependencies],
+    {
+      // only record changes that you mark with origin "generative"
+      trackedOrigins: new Set(["generative"]),
+    }
+  );
   // Helper functions for working with the Yjs data
   
   // Tasks
   const addTask = (taskData) => {
-    const taskId = uuidv4();
+    const taskId = taskData.id || uuidv4();      // use supplied id if given
     const taskMap = new Y.Map();
     
     // Set task properties
@@ -51,6 +57,7 @@ export const initializeHocusProvider = (projectId, user) => {
     taskMap.set('completed', taskData.completed || false);
     taskMap.set('color', taskData.color || '#ffffff');
     taskMap.set('locked', taskData.locked || false);
+    taskMap.set('draft',     !!taskData.draft);   // keep the flag
     
     // Add task to tasks map
     tasks.set(taskId, taskMap);
@@ -137,6 +144,7 @@ export const initializeHocusProvider = (projectId, user) => {
     tasks.forEach((taskMap, taskId) => {
       flowNodes.push({
         id: taskId,
+        draft: taskMap.get('draft') || false,
         data: { 
           label: taskMap.get('title'), 
           completed: taskMap.get('completed'),
@@ -169,6 +177,7 @@ export const initializeHocusProvider = (projectId, user) => {
   return {
     provider,
     awareness,
+    undoManager,
     setBatchDragState,
     tasks,
     dependencies,

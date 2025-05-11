@@ -6,9 +6,23 @@ import { v4 as uuidv4 } from 'uuid';
 export const initializeHocusProvider = (projectId, user) => {
   console.log(`Initializing Hocuspocus provider for project: ${projectId}`);
   
+  // Determine the WebSocket URL based on the current domain
+  const getWebSocketUrl = () => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.hostname;
+    
+    // If we're in development mode (localhost), use the specific port
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return `${protocol}//${host}:3001/collaboration/${projectId}`;
+    }
+    
+    // For production, use the same host with WebSocket protocol
+    return `${protocol}//${host}/collaboration/${projectId}`;
+  };
+  
   // Connect it to the backend
   const provider = new HocuspocusProvider({
-    url: `ws://localhost:3001/collaboration/${projectId}`,
+    url: getWebSocketUrl(),
     name: `projectdocument.${projectId}`,
     //token: user?.id?.toString(), // Pass user ID for authentication
   });

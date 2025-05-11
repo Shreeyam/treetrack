@@ -348,7 +348,6 @@ Be thoughtful and detailed. The goal is to create a structured blueprint of the 
     // We still include a user role message, but it might be less critical now.
     { role: "user", content: userPrompt }
   ];
-  console.log("messages", messages);
   try {
     // Use the structured output with Zod schema validation
     const completion = await openai.beta.chat.completions.parse({
@@ -398,7 +397,6 @@ app.post('/api/generate', isAuthenticated, isPremium, async (req, res) => {
   try {
     const projectData = await generativeEdit(user_input, project_id, req.session.user.id, current_state, chat_history); // Pass chat_history
     res.json({ data: projectData });
-    console.log(" projectData", projectData);
   } catch (error) {
     res.status(500).json({ error: "Failed to generate project structure" });
   }

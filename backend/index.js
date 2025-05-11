@@ -3,29 +3,30 @@ import http from 'http';
 import expressWs from 'express-ws';
 import { Hocuspocus } from "@hocuspocus/server";
 import { SQLite } from '@hocuspocus/extension-sqlite';
+import * as Y from "yjs";
 
 import { app, sessionParser, db } from './server.js';
 
-// 1️⃣ ONE shared HTTP server
 const server = http.createServer(app);
-
-// 2️⃣ Patch Express for *other* ws routes (if you need them)
 expressWs(app, server);
 
-// 3️⃣ Hocuspocus piggy‑backs automatically
+
 const collaborationServer = new Hocuspocus({
-// piggy‑back, no own listener
-  extensions: [ new SQLite({ database: 'yjs.db' }) ],
+  // piggy‑back, no own listener
+  extensions: [new SQLite({ database: 'yjs.db' })],
   async onConnect(data) {
     // Output some information
     console.log(`New websocket connection to document: ${data.documentName}`);
   },
-  onOpen() {
+  async onChange(data) {
+
+  },
+  async onOpen() {
     console.log('onOpen -  trying to opened');
   },
 });
 
-// 4️⃣ If you still want an explicit route:
+
 const PROJECT_QUERY =
   'SELECT 1 FROM projects WHERE user_id = ? AND id = ?';
 

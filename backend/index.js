@@ -10,11 +10,11 @@ import { app, sessionParser, db } from './server.js';
 const server = http.createServer(app);
 
 // 2️⃣ Patch Express for *other* ws routes (if you need them)
-expressWs(app, server);                     // share the same server instance! :contentReference[oaicite:1]{index=1}
+expressWs(app, server);
 
 // 3️⃣ Hocuspocus piggy‑backs automatically
 const collaborationServer = new Hocuspocus({
-                              // piggy‑back, no own listener
+// piggy‑back, no own listener
   extensions: [ new SQLite({ database: 'yjs.db' }) ],
   async onConnect(data) {
     // Output some information

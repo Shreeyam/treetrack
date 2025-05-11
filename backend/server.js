@@ -13,17 +13,14 @@ import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import 'dotenv/config';
 
-import expressWebsockets from "express-ws";
 const SQLiteStore = connectSqlite3(session);
 
-// const openai = new OpenAI();
 const openai = new OpenAI({
   apiKey: process.env.GEMINI_API_KEY,
   baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
 });
 
 const app = express();
-const port = 3001;
 
 app.use(cors({
   origin: true, // allow credentials from any origin for testing; restrict in production!
@@ -75,38 +72,6 @@ db.serialize(() => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       user_id INTEGER,
-      FOREIGN KEY(user_id) REFERENCES users(id)
-    )
-  `);
-
-  // Create the tasks table.
-  db.run(`
-    CREATE TABLE IF NOT EXISTS tasks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      posX REAL DEFAULT 0,
-      posY REAL DEFAULT 0,
-      completed INTEGER DEFAULT 0,
-      project_id INTEGER,
-      user_id INTEGER,
-      color TEXT,
-      locked BOOLEAN DEFAULT 0,
-      FOREIGN KEY(project_id) REFERENCES projects(id),
-      FOREIGN KEY(user_id) REFERENCES users(id)
-    )
-  `);
-
-  // Create the dependencies table.
-  db.run(`
-    CREATE TABLE IF NOT EXISTS dependencies (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      from_task INTEGER,
-      to_task INTEGER,
-      project_id INTEGER,
-      user_id INTEGER,
-      FOREIGN KEY(from_task) REFERENCES tasks(id) DEFERRABLE INITIALLY DEFERRED,
-      FOREIGN KEY(to_task) REFERENCES tasks(id) DEFERRABLE INITIALLY DEFERRED,
-      FOREIGN KEY(project_id) REFERENCES projects(id),
       FOREIGN KEY(user_id) REFERENCES users(id)
     )
   `);
@@ -235,105 +200,6 @@ app.delete('/api/projects/:id', isAuthenticated, (req, res) => {
   });
 });
 
-// --- TASK ENDPOINTS (Authenticated) ---
-
-app.get('/api/tasks', isAuthenticated, (req, res) => {
-  const { project_id } = req.query;
-  let query = "SELECT * FROM tasks WHERE user_id = ?";
-  const params = [req.session.user.id];
-  if (project_id) {
-    query += " AND project_id = ?";
-    params.push(project_id);
-  }
-  db.all(query, params, (err, rows) => {
-    if (err) return res.status(400).json({ error: err.message });
-    res.json({ tasks: rows });
-  });
-});
-
-app.post('/api/tasks', isAuthenticated, (req, res) => {
-  const { title, posX, posY, completed, project_id, color } = req.body;  // Added color to destructuring
-  db.run(
-    "INSERT INTO tasks (title, posX, posY, completed, project_id, user_id, color) VALUES (?, ?, ?, ?, ?, ?, ?)",  // Added color to INSERT
-    [title, posX || 0, posY || 0, completed || 0, project_id, req.session.user.id, color || '#ffffff'],  // Added color with default
-    function (err) {
-      if (err) return res.status(400).json({ error: err.message });
-      res.json({ id: this.lastID });
-    }
-  );
-});
-
-app.put('/api/tasks', isAuthenticated, (req, res) => {
-  // Update many rows of table
-});
-
-app.put('/api/tasks/:id', isAuthenticated, (req, res) => {
-  const { title, posX, posY, completed, color, project_id } = req.body;
-  db.run(
-    "UPDATE tasks SET title = ?, posX = ?, posY = ?, completed = ?, color = ?, project_id = ? WHERE id = ? AND user_id = ?",
-    [title, posX, posY, completed, color, project_id, req.params.id, req.session.user.id],
-    function (err) {
-      if (err) return res.status(400).json({ error: err.message });
-      res.json({ changes: this.changes });
-    }
-  );
-});
-
-// When deleting a task, first delete its dependencies.
-app.delete('/api/tasks/:id', isAuthenticated, (req, res) => {
-  db.serialize(() => {
-    db.run(
-      "DELETE FROM dependencies WHERE (from_task = ? OR to_task = ?) AND user_id = ?",
-      [req.params.id, req.params.id, req.session.user.id],
-      function (err) {
-        if (err) return res.status(400).json({ error: err.message });
-        db.run(
-          "DELETE FROM tasks WHERE id = ? AND user_id = ?",
-          [req.params.id, req.session.user.id],
-          function (err2) {
-            if (err2) return res.status(400).json({ error: err2.message });
-            res.json({ changes: this.changes });
-          }
-        );
-      }
-    );
-  });
-});
-
-// --- DEPENDENCY ENDPOINTS (Authenticated) ---
-
-app.get('/api/dependencies', isAuthenticated, (req, res) => {
-  const { project_id } = req.query;
-  let query = "SELECT * FROM dependencies WHERE user_id = ?";
-  const params = [req.session.user.id];
-  if (project_id) {
-    query += " AND project_id = ?";
-    params.push(project_id);
-  }
-  db.all(query, params, (err, rows) => {
-    if (err) return res.status(400).json({ error: err.message });
-    res.json({ dependencies: rows });
-  });
-});
-
-app.post('/api/dependencies', isAuthenticated, (req, res) => {
-  const { from_task, to_task, project_id } = req.body;
-  db.run(
-    "INSERT INTO dependencies (from_task, to_task, project_id, user_id) VALUES (?, ?, ?, ?)",
-    [from_task, to_task, project_id, req.session.user.id],
-    function (err) {
-      if (err) return res.status(400).json({ error: err.message });
-      res.json({ id: this.lastID });
-    }
-  );
-});
-
-app.delete('/api/dependencies/:id', isAuthenticated, (req, res) => {
-  db.run("DELETE FROM dependencies WHERE id = ? AND user_id = ?", [req.params.id, req.session.user.id], function (err) {
-    if (err) return res.status(400).json({ error: err.message });
-    res.json({ changes: this.changes });
-  });
-});
 
 // Update the generativeEdit function signature to accept chatHistory
 async function generativeEdit(userInput, projectId, userId, currentState, chatHistory) { // Added chatHistory parameter

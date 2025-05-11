@@ -3,18 +3,14 @@
 // Helper to add a new node using Yjs
 export function createAddNewNode({
     newTaskTitle,
-    currentProject,
     reactFlowInstance,
     reactFlowWrapper,
     lastNodePosition,
-    cascadeCount,
     cascadeStartPoint,
-    createNodeStyle,
     setCascadeCount,
     setCascadeStartPoint,
     setLastNodePosition,
     setNewTaskTitle,
-    setNodes,
     position = null, // Add optional position parameter
     yjs = null // Add Yjs handler parameter
 }) {

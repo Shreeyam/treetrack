@@ -298,34 +298,62 @@ function App({ user, setUser }) {
 
                 return hasEdgeChanges ? mergedEdges : currentEdges;
             });
-        });        // Awareness: live dragging from all users
+        });        // Awareness: live dragging from all users with enhanced batch support
         handler.awareness.on("change", () => {
             const states = Array.from(handler.awareness.getStates().values());
-            // Collect all currently dragged nodes from all users
-            const dragMap = Object.fromEntries(
-                states
-                    .filter(s => s.drag)
-                    .map(s => [s.drag.nodeId, { x: s.drag.posX, y: s.drag.posY }]),
-            );
-
+            
+            // Initialize drag position map
+            let dragMap = {};
+            
+            // First collect individual drag updates (backward compatibility)
+            states.forEach(state => {
+                if (state.drag) {
+                    dragMap[state.drag.nodeId] = { 
+                        x: state.drag.posX, 
+                        y: state.drag.posY 
+                    };
+                }
+            });
+            
+            // Then merge in batch updates (new optimized format)
+            states.forEach(state => {
+                if (state.batchDrag && Array.isArray(state.batchDrag)) {
+                    state.batchDrag.forEach(dragItem => {
+                        dragMap[dragItem.nodeId] = {
+                            x: dragItem.posX,
+                            y: dragItem.posY
+                        };
+                    });
+                }
+            });
+            
             // If nothing is being dragged, no work:
             if (!Object.keys(dragMap).length) return;
-
-            // Move the nodes *only* visually – do NOT call syncNodeWithYJS here
-            // But also filter out nodes that the local user is currently dragging
-            setNodes(nodes =>
-                nodes.map(n => {
+            
+            // Performance optimization: Use updater function that only creates new array if needed
+            setNodes(nodes => {
+                let hasChanges = false;
+                const updatedNodes = nodes.map(n => {
                     // Skip nodes that the local user is currently dragging to avoid jitter
                     if (locallyDraggedNodes.current && locallyDraggedNodes.current.has(n.id)) {
                         return n;
                     }
                     
                     // Apply remote drag updates
-                    return dragMap[n.id]
-                        ? { ...n, position: dragMap[n.id] }   // <- live update!
-                        : n;
-                }),
-            );
+                    if (dragMap[n.id]) {
+                        hasChanges = true;
+                        return {
+                            ...n,
+                            position: dragMap[n.id]  // <- live update!
+                        };
+                    }
+                    
+                    return n;
+                });
+                
+                // Only create new array if there were actual changes
+                return hasChanges ? updatedNodes : nodes;
+            });
         });
     }, [user, createNodeStyle]);
 
@@ -411,8 +439,7 @@ function App({ user, setUser }) {
         setDeleteProjectDialog(false);
     }, [currentProject]); const handleCancelDeleteProject = useCallback(() => {
         setDeleteProjectDialog(false);
-    }, []);
-    // Helper function to synchronize node changes with YJS
+    }, []);    // Helper function to synchronize node changes with YJS
     const syncNodeWithYJS = useCallback((nodeId) => {
         if (!yjsHandlerRef.current) return;
 
@@ -429,36 +456,125 @@ function App({ user, setUser }) {
             color: node.data.color
         });
     }, []);
+    
+    // Helper function to synchronize multiple nodes with YJS in a single transaction
+    const syncMultipleNodesWithYJS = useCallback((nodeIds) => {
+        if (!yjsHandlerRef.current || !yjsHandlerRef.current.updateMultipleTasks) return;
+        
+        const updates = nodeIds.map(nodeId => {
+            const node = nodesRef.current.find(n => n.id === nodeId);
+            if (!node || node.draft) return null;
+            
+            return {
+                id: nodeId,
+                data: {
+                    title: node.data.label,
+                    posX: node.position.x,
+                    posY: node.position.y,
+                    completed: node.data.completed,
+                    color: node.data.color
+                }
+            };
+        }).filter(Boolean);
+        
+        if (updates.length > 0) {
+            yjsHandlerRef.current.updateMultipleTasks(updates);
+        }
+    }, []);
     // --- Node dragging --------------------------------------------------------
     // Track which nodes the local user is currently dragging
     const locallyDraggedNodes = useRef(new Set());
-      // 1. every tiny move → awareness
+    
+    // Store currently selected nodes for batch operations
+    const selectedNodesRef = useRef([]);
+    
+    // Throttled batch update function - more aggressive for multi-node operations
+    const throttledBatchUpdate = useRef(
+        throttle((draggedNodes) => {
+            if (!yjsHandlerRef.current) return;
+            
+            // Only send batch update if we have nodes to update
+            if (draggedNodes.length > 0) {
+                yjsHandlerRef.current.setBatchDragState(draggedNodes);
+            } else {
+                yjsHandlerRef.current.setBatchDragState(null);
+            }
+        }, draggedNodes => draggedNodes.length > 1 ? 50 : 25) // More throttling for multiple nodes
+    ).current;
+      
+    // 1. every tiny move → awareness with improved batching
     const onNodeDrag = useCallback((_, node) => {
         // Add this node to our locally dragged set
         locallyDraggedNodes.current.add(node.id);
         
-        // Broadcast to other users - using throttle to reduce network traffic
-        // We don't need useCallback here since throttle returns a stable function reference
-        throttle((nodeId, x, y) => {
-            yjsHandlerRef.current?.setDragState(nodeId, x, y);
-        }, 25)(node.id, node.position.x, node.position.y);
+        // Find all selected nodes to batch update together
+        const nodesToUpdate = [];
+        
+        // Always include the current node being dragged
+        nodesToUpdate.push(node);
+        
+        // If the node being dragged is selected, also include other selected nodes
+        if (node.selected) {
+            const selectedNodes = nodesRef.current.filter(n => 
+                n.selected && n.id !== node.id // Include other selected nodes
+            );
+            nodesToUpdate.push(...selectedNodes);
+        }
+        
+        // Store current selection for use in drag stop
+        selectedNodesRef.current = nodesToUpdate;
+        
+        // Use the throttled batch update with adaptive timing
+        throttledBatchUpdate(nodesToUpdate);
     }, []);
 
-    // 2. drop → clear awareness + persist final position
+    // 2. drop → clear awareness + persist final position with batch updates
     const onNodeDragStop = useCallback(
         (event, node) => {
             if (node.draft) return;
             
-            // Remove from locally dragged set
-            locallyDraggedNodes.current.delete(node.id);
+            // Get all affected nodes (the dragged node and any selected nodes if this was part of a multi-select)
+            const affectedNodes = selectedNodesRef.current.length > 0 && node.selected
+                ? selectedNodesRef.current
+                : [node];
+            
+            // Clear all from locally dragged set
+            affectedNodes.forEach(n => {
+                locallyDraggedNodes.current.delete(n.id);
+            });
             
             // Clear awareness state
-            yjsHandlerRef.current?.setDragState(null);
+            yjsHandlerRef.current?.setBatchDragState(null);
             
             // Wait one frame so React-Flow finishes updating the node state
             requestAnimationFrame(() => {
-                // Immediately sync the final position with YJS
-                syncNodeWithYJS(node.id);
+                // Batch sync the final positions with YJS
+                const taskUpdates = affectedNodes.map(n => {
+                    // Find the current node data in React state (to get the most up-to-date position)
+                    const currentNode = nodesRef.current.find(current => current.id === n.id);
+                    if (!currentNode || currentNode.draft) return null;
+                    
+                    return {
+                        id: currentNode.id,
+                        data: {
+                            posX: currentNode.position.x,
+                            posY: currentNode.position.y
+                        }
+                    };
+                }).filter(Boolean); // Remove any null entries
+                
+                // Use batch update if available and we have multiple nodes
+                if (yjsHandlerRef.current?.updateMultipleTasks && taskUpdates.length > 1) {
+                    yjsHandlerRef.current.updateMultipleTasks(taskUpdates);
+                } else {
+                    // Fall back to individual updates
+                    taskUpdates.forEach(update => {
+                        syncNodeWithYJS(update.id);
+                    });
+                }
+                
+                // Clear selection cache
+                selectedNodesRef.current = [];
             });
         },
         [syncNodeWithYJS]

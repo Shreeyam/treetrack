@@ -24,6 +24,23 @@ export const initializeHocusProvider = (projectId, user) => {
     );
   };
 
+  /** Batch update multiple node drag positions in a single awareness update */
+  const setBatchDragState = (dragNodes) => {
+    if (!dragNodes || dragNodes.length === 0) {
+      // Clear drag state when no nodes are provided
+      awareness.setLocalStateField("batchDrag", null);
+      return;
+    }
+
+    const dragStates = dragNodes.map(node => ({
+      nodeId: node.id, 
+      posX: node.position.x, 
+      posY: node.position.y
+    }));
+
+    awareness.setLocalStateField("batchDrag", dragStates);
+  };
+
   // Define our Yjs data structures
   const tasks = provider.document.getMap("tasks");
   const dependencies = provider.document.getMap("dependencies");
@@ -49,6 +66,23 @@ export const initializeHocusProvider = (projectId, user) => {
     return taskId;
   };
   
+  // Update multiple tasks in one transaction for better performance
+  const updateMultipleTasks = (taskUpdates) => {
+    provider.document.transact(() => {
+      taskUpdates.forEach(({ id, data }) => {
+        const taskMap = tasks.get(id);
+        if (taskMap) {
+          // Update only the provided properties
+          Object.entries(data).forEach(([key, value]) => {
+            taskMap.set(key, value);
+          });
+        }
+      });
+    });
+    
+    return true;
+  };
+
   const updateTask = (taskId, taskData) => {
     const taskMap = tasks.get(taskId);
     if (!taskMap) return false;
@@ -144,10 +178,12 @@ export const initializeHocusProvider = (projectId, user) => {
     provider,
     awareness,
     setDragState,
+    setBatchDragState,
     tasks,
     dependencies,
     addTask,
     updateTask,
+    updateMultipleTasks,
     deleteTask,
     addDependency,
     deleteDependency,

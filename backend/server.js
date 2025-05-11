@@ -186,17 +186,9 @@ app.post('/api/projects', isAuthenticated, (req, res) => {
 
 app.delete('/api/projects/:id', isAuthenticated, (req, res) => {
   const projectId = req.params.id;
-  db.serialize(() => {
-    db.run("DELETE FROM dependencies WHERE project_id = ? AND user_id = ?", [projectId, req.session.user.id], function (err) {
-      if (err) return res.status(400).json({ error: err.message });
-      db.run("DELETE FROM tasks WHERE project_id = ? AND user_id = ?", [projectId, req.session.user.id], function (err2) {
-        if (err2) return res.status(400).json({ error: err2.message });
-        db.run("DELETE FROM projects WHERE id = ? AND user_id = ?", [projectId, req.session.user.id], function (err3) {
-          if (err3) return res.status(400).json({ error: err3.message });
-          res.json({ changes: this.changes });
-        });
-      });
-    });
+  db.run("DELETE FROM projects WHERE id = ? AND user_id = ?", [projectId, req.session.user.id], function (err) {
+    if (err) return res.status(400).json({ error: err.message });
+    res.json({ changes: this.changes });
   });
 });
 

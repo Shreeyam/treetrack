@@ -23,6 +23,9 @@ export function Footer() {
                             <Link to="/privacy" className="hover:underline">
                                 Privacy
                             </Link>
+                            <Link to="/tos" className="hover:underline">
+                                Terms of Service
+                            </Link>
                             <Link to="/about" className="hover:underline">
                                 About
                             </Link>

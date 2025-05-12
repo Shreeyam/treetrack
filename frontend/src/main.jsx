@@ -8,7 +8,9 @@ import App from './App';
 import LandingPage from './LandingPage';
 import AuthForm from './components/auth/AuthForm';
 import ReloadOnErrorBoundary from '@/components/ReloadOnErrorBoundary';
-import AboutPage from './AboutPage'; // Assuming AboutPage is here
+import AboutPage from './AboutPage'; // Assuming AboutPage is here\
+import PrivacyPage from './PrivacyPage'; // Assuming Privacy is here
+import TermsOfServicePage from './TermsOfServicePage'; // Assuming Privacy is here
 
 // Define a Root component to hold state
 function Root() {
@@ -27,6 +29,8 @@ function Root() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/about" element={<AboutPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/tos" element={<TermsOfServicePage />} />
         {/* Pass user state to App */}
         <Route path="/app" element={<App user={user} setUser={setUser} />} />
         {/* Pass setUser or a handler function to AuthForm */}

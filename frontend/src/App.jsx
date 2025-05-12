@@ -10,7 +10,7 @@ import TopBar from '@/components/navigation/TopBar';
 import FlowArea from '@/components/flow/FlowArea';
 import { nodeStyles } from '@/components/flow/styles';
 import { fetchUser, fetchProjects, createProject, deleteProject, fetchTasksAndEdges, updateTask, deleteTask, deleteDependency } from './api';
-import ChatBot from './components/misc/chatbot';
+import ChatBot from './components/misc/Chatbot';
 import ChecksumIndicator from './components/misc/ChecksumIndicator';
 import { createAddNewNode, mapWithChangeDetection } from './utils/nodeFunctions';
 import { useNavigate } from 'react-router';

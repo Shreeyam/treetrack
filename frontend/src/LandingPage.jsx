@@ -10,8 +10,7 @@ import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { ReactTyped } from "react-typed";
 
-import { Footer } from "@/components/navigation/Footer";
-import { Navbar } from "@/components/navigation/Navbar";
+import { AppShell } from "@/components/navigation/AppShell";
 
 
 import "@/globals.css";
@@ -21,10 +20,7 @@ import FAQ from "@/components/landing/FAQ";
 
 export default function TreetrackLanding() {
     return (
-        <div className="flex flex-col min-h-screen">
-            {/* Navigation */}
-            <Navbar />
-
+        <AppShell>
             {/* Hero Section */}
             <section className="relative overflow-hidden w-full py-8 md:py-16 lg:py-24">
                 <video
@@ -190,8 +186,7 @@ export default function TreetrackLanding() {
             </section>
 
 
-            {/* Footer */}
-            <Footer />
-        </div>
+            
+        </AppShell>
     );
 }

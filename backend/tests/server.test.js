@@ -1,8 +1,8 @@
 // server.test.js
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
-import sqlite3pkg from 'sqlite3';
-const sqlite3 = sqlite3pkg.verbose();
+import BetterSqlite3 from 'better-sqlite3';
+
 
 // --- Configuration ---
 const TEST_DB_PATH = ':memory:'; // Use in-memory database
@@ -10,24 +10,37 @@ const TEST_SESSIONS_DB_PATH = ':memory:'; // Use in-memory database for sessions
 
 // --- Mocking ---
 // Mock OpenAI before importing the app
-// 1. Define the core mock function for the AI call
-const mockCreateCompletion = vi.fn().mockResolvedValue({ // Default success response
+const mockParseCompletion = vi.fn().mockResolvedValue({
     choices: [{
         message: {
-            content: JSON.stringify({
-                tasks: [{ id: -1, title: "Mock Task", posX: 0, posY: 0, completed: 0, project_id: 0, user_id: 0, color: "#aabbcc", locked: 0, draft: 1 }],
+            // .parsed is what your code does: `completion.choices[0].message.parsed`
+            parsed: {
+                tasks: [{
+                    id: -1,
+                    title: "Mock Task",
+                    posX: 0,
+                    posY: 0,
+                    completed: 0,
+                    project_id: 0,
+                    user_id: 0,
+                    color: "#aabbcc",
+                    locked: 0,
+                    draft: 1
+                }],
                 dependencies: [],
                 summary: "Mocked AI summary."
-            })
+            }
         }
     }]
 });
 
-// 2. Create the structure the OpenAI instance expects
+// 2. Expose that on beta.chat.completions.parse
 const mockOpenAIInstance = {
-    chat: {
-        completions: {
-            create: mockCreateCompletion // Use the mock function here
+    beta: {
+        chat: {
+            completions: {
+                parse: mockParseCompletion
+            }
         }
     }
 };
@@ -45,27 +58,69 @@ vi.mock('express-rate-limit', () => ({
     default: vi.fn(() => (req, res, next) => next()), // Mock implementation calls next() immediately
 }));
 
-// Mock connect-sqlite3 to use our test sessions DB
-vi.mock('connect-sqlite3', async (importOriginal) => {
+vi.mock('better-sqlite3-session-store', async (importOriginal) => {
+    if (!sessionDbInstance) {
+        // Handle failure during sessionDbInstance creation
+        console.error("Skipping session store mock setup: sessionDbInstance is null.");
+        // Return the original module to avoid breaking imports,
+        // although tests using sessions will likely fail later.
+        return importOriginal();
+    }
+
     const original = await importOriginal();
-    const ConnectSqlite3 = original.default; // Get the actual function
+    const StoreFactory = original.default;
+
     return {
-        default: (session) => {
-            // Return a constructor that uses our test path (:memory:)
-            return class MockSQLiteStore extends ConnectSqlite3(session) {
-                constructor(options) {
-                    // Directly use :memory: for the session store DB
-                    super({ ...options, db: TEST_SESSIONS_DB_PATH });
+        __esModule: true,
+        default: (sessionLib) => { // factory function
+            const ActualStore = StoreFactory(sessionLib);
+
+            // Return a class that intercepts constructor options
+            return class MockBetterSqlite3Store extends ActualStore {
+                constructor(options = {}) {
+                    console.log('MockBetterSqlite3Store constructor received options:', options);
+
+                    // Force the 'client' option to our pre-created instance
+                    const forcedOptions = {
+                        ...options, // Keep original cookie, secret etc.
+                        client: sessionDbInstance, // <<<--- PASS THE ACTUAL INSTANCE HERE
+                        db: undefined // Ensure the store doesn't try to use a 'db' path
+                    };
+                    // Clean up db property if it was explicitly set to undefined
+                    if (forcedOptions.db === undefined) {
+                        delete forcedOptions.db;
+                    }
+
+                    console.log('MockBetterSqlite3Store calling super() with forced client instance.');
+                    // Call the REAL ActualStore constructor with our DB instance
+                    super(forcedOptions);
+
+                    // The ActualStore should now directly use sessionDbInstance internally
+                    console.log('MockBetterSqlite3Store super() finished.');
+                    // We expect this.client inside the actual store to be === sessionDbInstance
                 }
-            }
+            };
         }
     };
 });
+
 
 // Dynamically import the app *after* mocks are set up
 let app;
 let db; // Hold a reference to the test DB connection
 let mainDbCaptured = false; // Flag to capture only the first :memory: instance
+
+let sessionDbInstance; // Variable to hold the session DB
+try {
+    // Create this BEFORE mocks that might interfere with 'new Database()'
+    sessionDbInstance = new BetterSqlite3(':memory:');
+    console.log("Successfully created dedicated session DB instance for mocking.");
+    // We will close this in afterAll
+} catch (e) {
+    console.error("FATAL: Failed to create dedicated session DB instance for mocking:", e);
+    // Tests relying on sessions will likely fail, but throwing here might stop test runner
+    sessionDbInstance = null; // Ensure it's null if failed
+}
 
 // --- Test Suite ---
 describe('Express Server API Tests', () => {
@@ -87,54 +142,62 @@ describe('Express Server API Tests', () => {
         process.env.GEMINI_API_KEY = 'test-key';
 
         // Mock the database connection within the app module
-        vi.doMock('sqlite3', async (importOriginal) => {
-            const actualSqlite3 = await importOriginal(); // Get the original module
+        vi.doMock('better-sqlite3', async (importOriginal) => {
+            // 1. Import the actual module
+            const actualBetterSqlite3 = await importOriginal();
+            // better-sqlite3 exports the Database class as the default export
+            const OriginalDatabase = actualBetterSqlite3.default;
+            // Capture other exports if needed (e.g., SqliteError)
+            const { SqliteError } = actualBetterSqlite3;
 
-            // Define our MockDatabase class that extends the *actual* Database
-            class MockDatabase extends actualSqlite3.Database {
-                constructor(filename, mode, callback) {
-                    let resolvedCallback = callback;
+            console.log('Setting up better-sqlite3 mock...'); // Debugging log
 
-                    // Handle different constructor signatures (filename, callback) vs (filename, mode, callback)
-                    if (typeof mode === 'function' && !callback) {
-                        resolvedCallback = mode;
-                    }
+            // 2. Define our Mock Database class/constructor interceptor
+            //    We don't need to extend the original. We just need to intercept
+            //    the constructor call, modify arguments, call the original,
+            //    and capture the instance if needed.
+            class MockDatabase {
+                constructor(filename, options) {
+                    console.log(`MockDatabase: Intercepting new Database(${filename}, ${JSON.stringify(options)})`); // Debugging log
 
-                    // Always use :memory: for tests, but capture the first instance as 'db'
+                    // Always use :memory: for tests
                     const dbPathToUse = ':memory:';
-                    console.log(`MockDatabase: Using ${dbPathToUse} for ${filename}`); // Debugging log
+                    console.log(`MockDatabase: Using ${dbPathToUse} instead of ${filename}`);
 
-                    // Call the original constructor with the in-memory path
-                    super(dbPathToUse, mode, resolvedCallback);
+                    // Call the original constructor with the in-memory path and original options
+                    const actualDbInstance = new OriginalDatabase(dbPathToUse, options);
 
-                    // Store the reference ONLY for the first :memory: connection (assumed main DB)
+                    // Store the reference ONLY for the first instance matching the target filename
                     if (filename === './todos.db' && !mainDbCaptured) {
                         console.log(`MockDatabase: Capturing main DB instance for ${filename}`);
-                        db = this;
+                        db = actualDbInstance; // Store the *actual* instance
                         mainDbCaptured = true; // Set flag
+                    } else if (filename === './todos.db') {
+                        console.log(`MockDatabase: Instance for ${filename} already captured.`);
                     }
+
+                    // The constructor in JS implicitly returns 'this', but when you return
+                    // an explicit object (like actualDbInstance), that object is returned instead.
+                    // This ensures that code using `new MockDatabase(...)` gets a real, working
+                    // better-sqlite3 Database instance connected to :memory:.
+                    return actualDbInstance;
                 }
             }
 
-            // Create the mock object that mimics the sqlite3 module structure
-            const mockSqlite = {
-                verbose: () => {
-                    return {
-                        Database: MockDatabase,
-                        OPEN_READWRITE: actualSqlite3.OPEN_READWRITE,
-                        OPEN_CREATE: actualSqlite3.OPEN_CREATE,
-                        verbose: () => mockSqlite.verbose()
-                    };
-                },
+            // 3. Define the structure of the mock module
+            const mockBetterSqlite3 = {
+                // Provide the mock class as the default export
+                default: MockDatabase,
+                // Also provide it as a named export 'Database' in case code uses
+                // import { Database } from 'better-sqlite3';
                 Database: MockDatabase,
-                OPEN_READWRITE: actualSqlite3.OPEN_READWRITE,
-                OPEN_CREATE: actualSqlite3.OPEN_CREATE,
+                // Forward other necessary exports from the original module
+                SqliteError: SqliteError,
+                // Add any other named exports from better-sqlite3 if your tests/code rely on them
             };
 
-            return {
-                default: mockSqlite,
-                ...mockSqlite
-            };
+            // 4. Return the mock module structure for Vitest
+            return mockBetterSqlite3;
         });
 
         // Now import the app - it will use the mocked Database
@@ -147,60 +210,86 @@ describe('Express Server API Tests', () => {
         agent = request.agent(app); // Create agent for cookie persistence
     });
 
-    afterAll(async () => {
+    afterAll(() => { // Can remove 'async' as db.close() is synchronous
+        // Get the captured database instance using the helper
+        if (!db) {
+            console.warn("getCapturedDb called but main DB was not captured (or was reset). Ensure './todos.db' was instantiated.");
+        }
+        const dbToClose = db; // Capture the reference to close later
         // Close the test database connection
-        await new Promise((resolve, reject) => {
-            if (db) {
-                db.close((err) => {
-                    if (err) {
-                        console.error("Error closing test DB:", err);
-                        return reject(err);
-                    }
-                    console.log("Test DB closed.");
-                    resolve();
-                });
-            } else {
-                console.log("No test DB instance captured to close.");
-                resolve();
+        if (dbToClose) {
+            try {
+                console.log("Closing test DB...");
+                dbToClose.close(); // better-sqlite3 close is synchronous
+                console.log("Test DB closed.");
+            } catch (err) {
+                // Handle potential errors during close
+                console.error("Error closing test DB:", err);
+                // Optionally re-throw if a failed close should fail the suite:
+                // throw err;
             }
-        });
+        } else {
+            console.log("No test DB instance captured to close.");
+        }
 
         // Clean up mocks
         vi.restoreAllMocks();
+
         mainDbCaptured = false; // Reset flag for potential future runs
     });
 
     // Clean database tables before each test
     beforeEach(async () => {
-        await new Promise((resolve, reject) => {
-            db.serialize(() => {
-                db.run("DELETE FROM dependencies", (err) => { if (err) console.error("Cleanup Err Dep:", err); });
-                db.run("DELETE FROM tasks", (err) => { if (err) console.error("Cleanup Err Task:", err); });
-                db.run("DELETE FROM projects", (err) => { if (err) console.error("Cleanup Err Proj:", err); });
-                db.run("DELETE FROM users", (err) => {
-                    if (err) { console.error("Cleanup Err User:", err); reject(err); }
-                    else resolve();
-                });
-                db.run("DELETE FROM sqlite_sequence WHERE name IN ('users', 'projects', 'tasks', 'dependencies')", (err) => { if (err) console.error("Cleanup Err Seq:", err); });
-            });
-        });
+        // 1. Wipe out all rows (in the correct FK order)
+        db.prepare("DELETE FROM dependencies").run();
+        db.prepare("DELETE FROM tasks").run();
+        db.prepare("DELETE FROM projects").run();
+        db.prepare("DELETE FROM users").run();
+
+        // 2. Reset all AUTOINCREMENT counters
+        db.prepare(`
+          DELETE FROM sqlite_sequence
+          WHERE name IN ('users', 'projects', 'tasks', 'dependencies')
+        `).run();
+
+        // 3. Spin up a fresh agent & seed your test data
         agent = request.agent(app);
 
-        const res = await agent.post('/api/register').send({ username: 'testuser', password: 'password' });
-        testUser = res.body;
+        const resUser = await agent
+            .post("/api/register")
+            .send({ username: "testuser", password: "password" });
+        testUser = resUser.body;
 
-        const projRes = await agent.post('/api/projects').send({ name: 'Test Project' });
-        testProject = projRes.body;
+        const resProj = await agent
+            .post("/api/projects")
+            .send({ name: "Test Project" });
+        testProject = resProj.body;
 
-        const task1Res = await agent.post('/api/tasks').send({ title: 'Task 1', project_id: testProject.id });
-        testTask1 = { id: task1Res.body.id, title: 'Task 1', project_id: testProject.id };
+        const resTask1 = await agent
+            .post("/api/tasks")
+            .send({ title: "Task 1", project_id: testProject.id });
+        testTask1 = { id: resTask1.body.id, title: "Task 1", project_id: testProject.id };
 
-        const task2Res = await agent.post('/api/tasks').send({ title: 'Task 2', project_id: testProject.id });
-        testTask2 = { id: task2Res.body.id, title: 'Task 2', project_id: testProject.id };
+        const resTask2 = await agent
+            .post("/api/tasks")
+            .send({ title: "Task 2", project_id: testProject.id });
+        testTask2 = { id: resTask2.body.id, title: "Task 2", project_id: testProject.id };
 
-        const depRes = await agent.post('/api/dependencies').send({ from_task: testTask1.id, to_task: testTask2.id, project_id: testProject.id });
-        testDependency = { id: depRes.body.id, from_task: testTask1.id, to_task: testTask2.id, project_id: testProject.id };
+        const resDep = await agent
+            .post("/api/dependencies")
+            .send({
+                from_task: testTask1.id,
+                to_task: testTask2.id,
+                project_id: testProject.id,
+            });
+        testDependency = {
+            id: resDep.body.id,
+            from_task: testTask1.id,
+            to_task: testTask2.id,
+            project_id: testProject.id,
+        };
     });
+
 
     // --- Helper Functions ---
     const registerUser = (username, password) => {
@@ -239,7 +328,7 @@ describe('Express Server API Tests', () => {
             await registerUser('duplicate', 'password');
             const res = await registerUser('duplicate', 'password');
             expect(res.status).toBe(400);
-            expect(res.body.error).toContain('UNIQUE constraint failed: users.username');
+            expect(res.body.error).toContain('SQLITE_CONSTRAINT_UNIQUE');
         });
 
         // Simulate bcrypt error during registration (harder to mock reliably without deeper hooks)
@@ -247,6 +336,8 @@ describe('Express Server API Tests', () => {
 
         it('POST /api/login - should log in an existing user', async () => {
             // testuser created in beforeEach
+            // Make sure to log out the agent first
+            await agent.post('/api/logout');
             const res = await agent.post('/api/login').send({ username: 'testuser', password: 'password' });
             expect(res.status).toBe(200);
             expect(res.body).toHaveProperty('id', testUser.id);
@@ -339,16 +430,14 @@ describe('Express Server API Tests', () => {
 
         it('isPremium - should allow access to premium route if premium', async () => {
             // Make the user premium in the DB
-            await new Promise((resolve, reject) => {
-                db.run("UPDATE users SET premium = 1 WHERE id = ?", [testUser.id], (err) => {
-                    if (err) reject(err); else resolve();
-                });
-            });
+            db.prepare("UPDATE users SET premium = 1 WHERE id = ?").run(testUser.id);
             // Re-login might be needed if premium status isn't refreshed in session automatically
             // In this setup, login reads premium status, so we need to re-login
             await loginUser('testuser', 'password');
+            const payload = { user_input: 'test', project_id: testProject.id, chat_history: [] };
+            console.log(payload);
+            const res = await agent.post('/api/generate').send(payload);
 
-            const res = await agent.post('/api/generate').send({ user_input: 'test', project_id: testProject.id });
             // Expect success (or whatever the generate endpoint returns on success)
             // Since OpenAI is mocked, we expect 200
             expect(res.status).toBe(200);
@@ -364,6 +453,7 @@ describe('Express Server API Tests', () => {
     describe('Project Endpoints (Authenticated)', () => {
         it('POST /api/projects - should create a new project', async () => {
             const res = await agent.post('/api/projects').send({ name: 'My New Project' });
+            console.log(res.body);
             expect(res.status).toBe(200);
             expect(res.body).toHaveProperty('id');
             expect(res.body).toHaveProperty('name', 'My New Project');
@@ -769,11 +859,7 @@ describe('Express Server API Tests', () => {
             // Create and login as a premium user for these tests
             const regRes = await registerUser('premiumuser', 'password');
             premiumUser = { id: regRes.body.id, username: 'premiumuser' };
-            await new Promise((resolve, reject) => {
-                db.run("UPDATE users SET premium = 1 WHERE id = ?", [premiumUser.id], (err) => {
-                    if (err) reject(err); else resolve();
-                });
-            });
+            db.prepare("UPDATE users SET premium = 1 WHERE id = ?").run(premiumUser.id); // Set premium status
             premiumAgent = request.agent(app);
             await premiumAgent.post('/api/login').send({ username: 'premiumuser', password: 'password' });
         });
@@ -781,9 +867,9 @@ describe('Express Server API Tests', () => {
         it('should generate project structure for premium user', async () => {
             const res = await premiumAgent.post('/api/generate').send({
                 user_input: 'Plan a vacation',
-                project_id: testProject.id // Assuming generate can add to existing project
+                project_id: testProject.id, // Assuming generate can add to existing project
+                chat_history: []
             });
-            console.log('Response:', res.body); // Log the response for debugging
             expect(res.status).toBe(200);
             expect(res.body).toHaveProperty('data');
             expect(res.body.data).toHaveProperty('tasks');
@@ -829,7 +915,7 @@ describe('Express Server API Tests', () => {
         it('should handle errors from the AI service', async () => {
             // Configure the mock to throw an error
             const openaiInstance = vi.mocked(await import('openai')).default(); // Get the mocked instance
-            vi.mocked(openaiInstance.chat.completions.create).mockRejectedValueOnce(new Error('AI API Error'));
+            vi.mocked(openaiInstance.beta.chat.completions.parse).mockRejectedValueOnce(new Error('AI API Error'));
 
             const res = await premiumAgent.post('/api/generate').send({
                 user_input: 'Plan something',

@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 // If you don't have a Card component, you can simply use <div> elements with the provided Tailwind classes.
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card"; // Added CardTitle
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { LoaderCircle, Send, X, User, Bot } from "lucide-react"; // Added Send, X, User, Bot icons
 
 const ChatBot = ({ isOpen, onClose, currentProject, nodes, dependencies, handleGenerativeEdit, handleAcceptNodeChanges, handleRejectNodeChanges }) => { // Added onClose prop
@@ -15,7 +15,7 @@ const ChatBot = ({ isOpen, onClose, currentProject, nodes, dependencies, handleG
     const [isLoading, setIsLoading] = useState(false);
     const [pendingChanges, setPendingChanges] = useState(null);
     const messagesEndRef = useRef(null); // Ref for scrolling
-    const inputRef = useRef(null); // Ref for input focus
+    const textareaRef = useRef(null); // Ref for input focus
 
     // Function to scroll to the bottom of the messages
     const scrollToBottom = () => {
@@ -29,8 +29,8 @@ const ChatBot = ({ isOpen, onClose, currentProject, nodes, dependencies, handleG
 
     // Auto-focus the input field when the chatbot opens
     useEffect(() => {
-        if (isOpen && inputRef.current) {
-            inputRef.current.focus();
+        if (isOpen && textareaRef.current) {
+            textareaRef.current.focus();
         }
     }, [isOpen]);
 
@@ -211,13 +211,12 @@ const ChatBot = ({ isOpen, onClose, currentProject, nodes, dependencies, handleG
                     {/* Adjusted padding and added border-t */}
                     <CardFooter className="p-3 border-t [.border-t]:pt-3">
                         <form onSubmit={handleSendMessage} className="flex w-full items-center space-x-2">
-                            <Input
-                                type="text"
+                            <Textarea
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 placeholder="Type your request..."
-                                className="flex-1"
-                                ref={inputRef} /* Add the ref to the input element */
+                                className="flex-1 min-h-0 height-auto"
+                                ref={textareaRef} /* Add the ref to the input element */
                                 onKeyDown={(e) => {
                                     if (e.key === "Enter" && !e.shiftKey && !isLoading && !pendingChanges) { // Prevent Enter if loading or changes pending, allow shift+enter for newline
                                         e.preventDefault(); // Prevent default newline on Enter
@@ -225,6 +224,7 @@ const ChatBot = ({ isOpen, onClose, currentProject, nodes, dependencies, handleG
                                     }
                                 }}
                                 disabled={isLoading || !!pendingChanges}
+                                rows={1}
                             />
                             {/* Replaced text button with icon button */}
                             <Button type="submit" size="icon" disabled={isLoading || !!pendingChanges || !input.trim()}>

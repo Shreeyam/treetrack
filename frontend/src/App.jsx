@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+
 import { ReactFlowProvider, applyEdgeChanges, applyNodeChanges } from '@xyflow/react';
 import { useNodesState, useEdgesState } from '@xyflow/react';
+
 import '@xyflow/react/dist/style.css';
 import '@/globals.css';
 import "@/App.css";
@@ -33,8 +35,7 @@ function App({ user, setUser }) {
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const [prevNodes, setPrevNodes] = useState([]);
     const [prevEdges, setPrevEdges] = useState([]);
-    const [selectedSource, setSelectedSource] = useState(null);
-    const [selectedUnlinkSource, setSelectedUnlinkSource] = useState(null);
+    const [linkHighlight, setLinkHighlight] = useState(null);
     const [unlinkHighlight, setUnlinkHighlight] = useState(null);
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [hideCompleted, setHideCompleted] = useState(() => localStorage.getItem('hideCompleted') === 'true');
@@ -613,42 +614,74 @@ function App({ user, setUser }) {
         []
     );
 
-    const handleNodeClick = useCallback(
-        (event, node) => {
-            if (contextMenu.visible) {
-                setContextMenu({ visible: false, x: 0, y: 0, node: null });
-            }
+const handleNodeClick = useCallback(
+  (event, node) => {
+    // 1) Close any open context menu
+    if (contextMenu.visible) {
+      setContextMenu({ visible: false, x: 0, y: 0, node: null });
+    }
 
-            if ((event.ctrlKey || event.metaKey) && event.shiftKey) {
-                if (!selectedUnlinkSource) {
-                    setSelectedUnlinkSource(node);
-                } else if (selectedUnlinkSource.id !== node.id) {
-                    const edge = edges.find(e => e.source === selectedUnlinkSource.id && e.target === node.id);
-                    if (edge && yjsHandlerRef.current) {
-                        // Only call Yjs, do not setEdges directly
-                        yjsHandlerRef.current.deleteDependency(edge.id);
-                    }
-                    setUnlinkHighlight({ source: selectedUnlinkSource.id, target: node.id });
-                    setSelectedUnlinkSource(null);
-                    setTimeout(() => setUnlinkHighlight(null), 2000);
-                }
-                return;
-            }
+    // 2) Shift-clicking nodes drives link/unlink mode
+    if (event.shiftKey) {
+      const currentSelectedNodes = nodesRef.current.filter(n => n.selected);
 
-            if ((event.ctrlKey || event.metaKey) && !event.shiftKey) {
-                if (!selectedSource) {
-                    setSelectedSource(node);
-                } else if (selectedSource.id !== node.id) {
-                    onConnect({
-                        source: selectedSource.id,
-                        target: node.id
-                    });
-                    setSelectedSource(null);
-                }
-            }
-        },
-        [contextMenu, selectedSource, selectedUnlinkSource, edges, onConnect]
-    )
+      // If nothing is selected yet, start a new link “source”
+      if (currentSelectedNodes.length === 0 || (linkHighlight?.source && linkHighlight?.target)) {
+        setLinkHighlight({ source: node.id, target: null });
+      } else {
+        // Otherwise we have a source, so attempt to link/unlink
+        const sourceNodeId = currentSelectedNodes[0]?.id ?? linkHighlight.source;
+        if (sourceNodeId === node.id) {
+          // no self-links
+          return;
+        }
+
+        // Find an existing edge
+        const existingEdge = edgesRef.current.find(
+          e => e.source === sourceNodeId && e.target === node.id
+        );
+
+        if (existingEdge) {
+          // **UNLINK** via Yjs, not setEdges
+          if (yjsHandlerRef.current) {
+            yjsHandlerRef.current.deleteDependency(existingEdge.id);
+          }
+          // still show a little unlink flash
+          setUnlinkHighlight({ source: sourceNodeId, target: node.id });
+          setTimeout(() => {
+            setUnlinkHighlight(null);
+            setLinkHighlight(null);
+          }, 400);
+        } else {
+          // **LINK** via onConnect → Yjs
+          onConnect({ source: sourceNodeId, target: node.id });
+          setLinkHighlight({ source: sourceNodeId, target: node.id });
+          setTimeout(() => setLinkHighlight(null), 400);
+        }
+
+        // clear any “selected” styling on nodes
+        setNodes(ns =>
+          ns.map(n => {
+            if (!n.selected) return n;
+            const unselected = { ...n, selected: false };
+            return {
+              ...unselected,
+              style: createNodeStyle(
+                unselected.data.color,
+                unselected.data.completed,
+                false,
+                unselected.draft
+              ),
+            };
+          })
+        );
+      }
+    }
+  },
+  // note: we include the things we actually read from outer scope
+  [contextMenu, linkHighlight, onConnect, yjsHandlerRef]
+);
+
 
     const handleToggleCompleted = useCallback((node) => {
         if (node.draft) return;
@@ -755,6 +788,7 @@ function App({ user, setUser }) {
         setDeleteSubtreeDialog(false);
         setNodeToDeleteSubtree(null);
     }, []);
+
 
     const handleGenerativeEdit = useCallback(async (projectData) => {
         const { tasks: aiTasks, dependencies: aiDeps } = projectData;
@@ -969,6 +1003,7 @@ function App({ user, setUser }) {
     const renderedNodes = useMemo(() => {
         // Derive selected nodes directly from the nodes state
         const currentSelectedNodes = nodes.filter(n => n.selected);
+        console.log(linkHighlight)
 
         return mapWithChangeDetection(visibleNodes, node => {
             // compute the one‑off style override
@@ -983,12 +1018,13 @@ function App({ user, setUser }) {
                 e.target === currentSelectedNodes[0].id && e.source === node.id
             );
 
+
             if (
                 unlinkHighlight &&
                 (node.id === unlinkHighlight.source || node.id === unlinkHighlight.target)
             ) {
                 nextStyle = { ...nextStyle, outline: '2px solid red' };
-            } else if (selectedSource && selectedSource.id === node.id) {
+            } else if (linkHighlight && (linkHighlight.source == node.id || linkHighlight.target == node.id)) {
                 nextStyle = {
                     ...nextStyle,
                     backgroundColor: node.data.color || '#ffffff',
@@ -998,6 +1034,7 @@ function App({ user, setUser }) {
                 nextStyle = { ...nextStyle, outline: '2px solid #FF6A1A', boxShadow: '0 0 10px 1px #FF6A1A' }; // Yellow for downstream + glow
             } else if (showUpDownstream && isUpstream) {
                 nextStyle = { ...nextStyle, outline: '2px solid #00B8E6', boxShadow: '0 0 10px 1px #00B8E6' }; // Purple for upstream + glow
+
             } else if (highlightNext) {
                 nextStyle = nextTaskIds.has(node.id)
                     ? { ...nextStyle, opacity: 1 }
@@ -1012,7 +1049,7 @@ function App({ user, setUser }) {
     }, [
         visibleNodes, // depends on nodes
         unlinkHighlight,
-        selectedSource,
+        linkHighlight,
         highlightNext,
         nextTaskIds, // depends on nodes
         edges,
@@ -1030,8 +1067,7 @@ function App({ user, setUser }) {
     }, []);
 
     const handlePaneClick = useCallback(() => {
-        setSelectedSource(null);
-        setSelectedUnlinkSource(null);
+        setLinkHighlight(null);
         setContextMenu({ visible: false, x: 0, y: 0, node: null });
     }, []);
 
@@ -1078,6 +1114,7 @@ function App({ user, setUser }) {
         [createNodeStyle, setNodes]
     );
 
+
     if (!user) {
         return <MemoAuthForm onLogin={setUser} />;
     }
@@ -1120,7 +1157,7 @@ function App({ user, setUser }) {
                     onNodesChange={customOnNodesChange}
                     onEdgesChange={customOnEdgesChange}
                     onConnect={onConnect}
-                    onNodeMouseDown={handleNodeClick}
+                    onNodeClick={handleNodeClick}
                     onNodeContextMenu={handleNodeContextMenu}
                     onNodeDrag={onNodeDrag}
                     onNodeDragStop={onNodeDragStop}

@@ -4,6 +4,8 @@
     "@hocuspocus/server": "^3.1.0",
     "@hocuspocus/transformer": "^3.1.1",
     "bcrypt": "^5.1.1",
+    "better-sqlite3": "^11.9.1",
+    "better-sqlite3-session-store": "^0.1.0",
     "body-parser": "^1.20.3",
     "connect-sqlite3": "^0.9.15",
     "cors": "^2.8.5",
@@ -30,6 +32,7 @@
   "type": "module",
   "devDependencies": {
     "@types/node": "^22.15.2",
+    "@vitest/ui": "3.1.2",
     "supertest": "^7.1.0",
     "vitest": "^3.1.2"
   }

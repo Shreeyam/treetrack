@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -19,7 +20,8 @@ import {
     User,
     Coffee,
     LogOut,
-    ChevronDown
+    ChevronDown,
+    CircleHelp
 } from 'lucide-react';
 import { siDiscord } from 'simple-icons';
 
@@ -140,6 +142,45 @@ const TopBar = memo(({
                 <Button variant="destructive" onClick={onDeleteProject}>
                     <FolderMinus />
                 </Button>
+                <Popover>
+                    <PopoverTrigger asChild>
+                        <Button variant="outline" size="icon">
+                            <CircleHelp />
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-80 p-4">
+                        <h3 className="text-sm font-semibold mb-2">Keyboard Shortcuts</h3>
+                        <ul className="space-y-2 text-sm">
+                            <li className="flex justify-between">
+                                <span>Link/unlink tasks</span>
+                                <span>
+                                    <kbd className="px-1 py-0.5 border rounded">Shift</kbd> +{" "}
+                                    <kbd className="px-1 py-0.5 border rounded">Click</kbd>
+                                </span>
+                            </li>
+                            <li className="flex justify-between">
+                                <span>Select multiple</span>
+                                <span>
+                                    <kbd className="px-1 py-0.5 border rounded">Ctrl</kbd> +{" "}
+                                    <kbd className="px-1 py-0.5 border rounded">Click</kbd>
+                                </span>
+                            </li>
+                            <li className="flex justify-between">
+                                <span>Select box</span>
+                                <span>
+                                    <kbd className="px-1 py-0.5 border rounded">Ctrl</kbd> +{" "}
+                                    <kbd className="px-1 py-0.5 border rounded">Drag</kbd>
+                                </span>
+                            </li>
+                            <li className="flex justify-between">
+                                <span>Delete task</span>
+                                <span>
+                                    <kbd className="px-1 py-0.5 border rounded">Delete</kbd>
+                                </span>
+                            </li>
+                        </ul>
+                    </PopoverContent>
+                </Popover>
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button variant="outline">
@@ -154,10 +195,10 @@ const TopBar = memo(({
                                 rel="noopener noreferrer"
                                 className="flex items-center"
                             >
-                                <div 
+                                <div
                                     className="h-4 w-4"
-                                    dangerouslySetInnerHTML={{ 
-                                        __html: siDiscord.svg.replace('role="img" viewBox', 'role="img" width="16" height="16" fill="#737373" viewBox') 
+                                    dangerouslySetInnerHTML={{
+                                        __html: siDiscord.svg.replace('role="img" viewBox', 'role="img" width="16" height="16" fill="#737373" viewBox')
                                     }}
                                 />
                                 Feature Request

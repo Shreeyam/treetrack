@@ -614,73 +614,43 @@ function App({ user, setUser }) {
         []
     );
 
-const handleNodeClick = useCallback(
-  (event, node) => {
-    // 1) Close any open context menu
-    if (contextMenu.visible) {
-      setContextMenu({ visible: false, x: 0, y: 0, node: null });
-    }
+    const handleNodeClick = useCallback(
+        (e, node) => {
+            // 1) Close any open context menu
+            if (contextMenu.visible) {
+                setContextMenu({ visible: false, x: 0, y: 0, node: null });
+            }
 
-    // 2) Shift-clicking nodes drives link/unlink mode
-    if (event.shiftKey) {
-      const currentSelectedNodes = nodesRef.current.filter(n => n.selected);
+            if (!e.shiftKey) return;       // normal click – do nothing extra
 
-      // If nothing is selected yet, start a new link “source”
-      if (currentSelectedNodes.length === 0 || (linkHighlight?.source && linkHighlight?.target)) {
-        setLinkHighlight({ source: node.id, target: null });
-      } else {
-        // Otherwise we have a source, so attempt to link/unlink
-        const sourceNodeId = currentSelectedNodes[0]?.id ?? linkHighlight.source;
-        if (sourceNodeId === node.id) {
-          // no self-links
-          return;
-        }
+            // First shift-click: store the anchor and quit
+            if (!linkHighlight || linkHighlight.target) {
+                setLinkHighlight({ source: node.id, target: null });
+                return;
+            }
 
-        // Find an existing edge
-        const existingEdge = edgesRef.current.find(
-          e => e.source === sourceNodeId && e.target === node.id
-        );
+            // Second shift-click: link/unlink with the stored anchor
+            const sourceId = linkHighlight.source;
+            if (sourceId === node.id) return;   // same node – ignore
 
-        if (existingEdge) {
-          // **UNLINK** via Yjs, not setEdges
-          if (yjsHandlerRef.current) {
-            yjsHandlerRef.current.deleteDependency(existingEdge.id);
-          }
-          // still show a little unlink flash
-          setUnlinkHighlight({ source: sourceNodeId, target: node.id });
-          setTimeout(() => {
-            setUnlinkHighlight(null);
-            setLinkHighlight(null);
-          }, 400);
-        } else {
-          // **LINK** via onConnect → Yjs
-          onConnect({ source: sourceNodeId, target: node.id });
-          setLinkHighlight({ source: sourceNodeId, target: node.id });
-          setTimeout(() => setLinkHighlight(null), 400);
-        }
+            const existing = edgesRef.current.find(
+                e => e.source === sourceId && e.target === node.id
+            );
 
-        // clear any “selected” styling on nodes
-        setNodes(ns =>
-          ns.map(n => {
-            if (!n.selected) return n;
-            const unselected = { ...n, selected: false };
-            return {
-              ...unselected,
-              style: createNodeStyle(
-                unselected.data.color,
-                unselected.data.completed,
-                false,
-                unselected.draft
-              ),
-            };
-          })
-        );
-      }
-    }
-  },
-  // note: we include the things we actually read from outer scope
-  [contextMenu, linkHighlight, onConnect, yjsHandlerRef]
-);
+            if (existing) {
+                yjsHandlerRef.current?.deleteDependency(existing.id);
+                setUnlinkHighlight({ source: sourceId, target: node.id });
+            } else {
+                onConnect({ source: sourceId, target: node.id });
+                setLinkHighlight({ source: sourceId, target: node.id });
+            }
+
+            
+            setTimeout(() => setUnlinkHighlight(null) || setLinkHighlight(null), 400);
+        },
+        // note: we include the things we actually read from outer scope
+        [contextMenu, linkHighlight, onConnect, yjsHandlerRef]
+    );
 
 
     const handleToggleCompleted = useCallback((node) => {
@@ -1003,7 +973,6 @@ const handleNodeClick = useCallback(
     const renderedNodes = useMemo(() => {
         // Derive selected nodes directly from the nodes state
         const currentSelectedNodes = nodes.filter(n => n.selected);
-        console.log(linkHighlight)
 
         return mapWithChangeDetection(visibleNodes, node => {
             // compute the one‑off style override

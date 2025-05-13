@@ -15,11 +15,12 @@ const FlowArea = memo(({
     nodes,
     edges,
     onNodesChange,
-    onEdgesChange,
+    onEdgesChange, // Accept onEdgesChange as a prop, but clarify in comments that it should only be used for UI changes (selection, style), not add/remove.
     onConnect,
     onNodeClick,
     onNodeContextMenu,
     onNodeDragStop,
+    onNodeDrag,        // ← add
     onPaneClick,
     onSelectionChange,
     contextMenu,
@@ -103,7 +104,7 @@ const FlowArea = memo(({
 
     const handleDeleteEdge = useCallback((edgeToDelete) => {
         if (onEdgesChange) {
-            onEdgesChange([{ type: 'remove', id: edgeToDelete.id }]);
+            onEdgesChange([{ type: 'remove', id: edgeToDelete.id }]); // When calling onEdgesChange for remove, this will now go through the custom handler in App.jsx, which calls Yjs and does not setEdges directly.
         }
         handleCloseArrowMenu();
     }, [onEdgesChange, handleCloseArrowMenu]);
@@ -119,6 +120,11 @@ const FlowArea = memo(({
             }
         });
     }, [nodes, onNodeDragStop]);
+
+    const handleNodeDrag = useCallback((event, draggedNode) => {
+        const selected = nodes.filter(n => n.selected || n.id === draggedNode.id);
+        selected.forEach(n => onNodeDrag?.(event, n));
+    }, [nodes, onNodeDrag]);
 
     const handleKeyDown = useCallback((event) => {
         // Only process if an input field isn't currently focused
@@ -168,11 +174,12 @@ const FlowArea = memo(({
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
-                onNodeClick={onNodeClick}
+                //onNodeClick={onNodeClick}
                 onNodeContextMenu={handleNodeContextMenu}
                 onEdgeContextMenu={handleEdgeContextMenu}
-                onNodeDragStop={handleNodeDragStop}
-                onSelectionChange={onSelectionChange}
+                onNodeDrag={handleNodeDrag}          // ← live moves
+                onNodeDragStop={handleNodeDragStop}  // ← final commit
+                //onSelectionChange={onSelectionChange}
                 elementsSelectable={true}
                 selectionOnDrag={true}
                 selectNodesOnDrag={true}

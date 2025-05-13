@@ -1,23 +1,18 @@
 // src/utils/nodeFunctions.js
 
-import { v4 as uuidv4 } from 'uuid'
-
-// Helper to optimistically add a new node, then patch its ID when the server responds
+// Helper to add a new node using Yjs
 export function createAddNewNode({
     newTaskTitle,
-    currentProject,
     reactFlowInstance,
     reactFlowWrapper,
     lastNodePosition,
-    cascadeCount,
     cascadeStartPoint,
-    createNodeStyle,
     setCascadeCount,
     setCascadeStartPoint,
     setLastNodePosition,
     setNewTaskTitle,
-    setNodes,
-    position = null // Add optional position parameter
+    position = null, // Add optional position parameter
+    yjs = null // Add Yjs handler parameter
 }) {
     // Constants for cascading logic
     const CASCADE_OFFSET = 50;
@@ -97,53 +92,29 @@ export function createAddNewNode({
         }
 
         const taskTitle = newTaskTitle.trim() || 'New Task';
-        const tempId = `temp-${Date.now()}`;
-        const optimisticNode = {
-            id: tempId,
-            data: { label: taskTitle, completed: false, color: DEFAULT_COLOR },
-            position: newPosition,
-            style: createNodeStyle(DEFAULT_COLOR, false),
-            sourcePosition: 'right',
-            targetPosition: 'left'
-        };
+        
+        if (!yjs || !yjs.addTask) {
+            console.error('Yjs handler not available or missing addTask method');
+            return;
+        }
 
-        setNodes(nodes => [...nodes, optimisticNode]);
-        setNewTaskTitle('');
-        setLastNodePosition(newPosition);
-
-
-        // --- send to server ---
-        const newTask = {
+        // Add task to Yjs document
+        const newTaskData = {
             title: taskTitle,
             posX: newPosition.x,
-            posY: newPosition.y,
-            completed: 0,
-            project_id: parseInt(currentProject, 10),
+            posY: newPosition.y, 
+            completed: false,
             color: DEFAULT_COLOR
         };
-
-        fetch('/api/tasks', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newTask)
-        })
-            .then(res => res.json())
-            .then(json => {
-                // replace tempId with real id
-                setNodes(nodes =>
-                    nodes.map(n =>
-                        n.id === tempId
-                            ? { ...n, id: json.id.toString() }
-                            : n
-                    )
-                );
-            })
-            .catch(err => {
-                console.error('Failed to create task:', err);
-                // roll back optimistic node
-                setNodes(nodes => nodes.filter(n => n.id !== tempId));
-            });
+          // Add to Yjs document - this will trigger the YJS observer in App.jsx
+        // which will update the React state with all nodes including this new one
+        const newTaskId = yjs.addTask(newTaskData);
+        
+        // Don't directly update React state - let the YJS observer handle it
+        // The observer will get triggered by the YJS document change and add the node to state
+        
+        setNewTaskTitle('');
+        setLastNodePosition(newPosition);
     };
 }
 

@@ -12,6 +12,9 @@ import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import 'dotenv/config';
 
+
+const SQLiteStore = connectSqlite3(session);
+
 const openai = new OpenAI({
   apiKey: process.env.GEMINI_API_KEY,
   baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -29,64 +32,52 @@ app.use(express.json());
 
 app.set('trust proxy', 1);
 
-const db = new Database('./todos.db');
-db.pragma('foreign_keys = ON');
-
-const sessionDb = new Database('sessions.db');
-app.use(session({
-  store: new SqliteStore({ client: sessionDb }),
+// Configure sessions with a SQLite store.
+const sessionParser = session({
+  store: new SQLiteStore({ db: 'sessions.db', dir: './' }),
   secret: crypto.randomBytes(64).toString('hex'),
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, secure: process.env.NODE_ENV === 'production', domain: process.env.NODE_ENV === 'production' ? 'treetrack.xyz' : undefined }
-}));
+  cookie: { 
+    maxAge: 7 * 24 * 60 * 60 * 1000, 
+    secure: process.env.NODE_ENV === 'production', 
+    domain: process.env.NODE_ENV === 'production' ? 'treetrack.xyz' : undefined
+  } // 7 days persistence
+})
+app.use(sessionParser);
 
-db.prepare(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    premium BOOLEAN DEFAULT 0
-  );
-`).run();
-db.prepare(`
-  CREATE TABLE IF NOT EXISTS projects (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    user_id INTEGER,
-    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
-`).run();
-db.prepare(`
-  CREATE TABLE IF NOT EXISTS tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    posX REAL DEFAULT 0,
-    posY REAL DEFAULT 0,
-    completed INTEGER DEFAULT 0,
-    project_id INTEGER,
-    user_id INTEGER,
-    color TEXT,
-    locked BOOLEAN DEFAULT 0,
-    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
-    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
-`).run();
+// Connect to our main SQLite DB.
+const db = new sqlite3.Database('./todos.db', (err) => {
+  if (err) {
+    console.error("Error connecting to SQLite database:", err.message);
+  } else {
+    console.log('Connected to SQLite database.');
+    db.run("PRAGMA foreign_keys = ON");
+  }
+});
 
-db.prepare(`
-  CREATE TABLE IF NOT EXISTS dependencies (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    from_task INTEGER,
-    to_task INTEGER,
-    project_id INTEGER,
-    user_id INTEGER,
-    FOREIGN KEY(from_task) REFERENCES tasks(id) ON DELETE CASCADE,
-    FOREIGN KEY(to_task) REFERENCES tasks(id) ON DELETE CASCADE,
-    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
-    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
-`).run();
+db.serialize(() => {
+  // Create the users table.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      premium BOOLEAN DEFAULT 0
+    )
+  `);
+
+  // Create the projects table (each project belongs to a user).
+  db.run(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      user_id INTEGER,
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    )
+  `);
+});
 
 function isAuthenticated(req, res, next) {
   if (req.session && req.session.user) {
@@ -232,200 +223,18 @@ app.post('/api/projects', isAuthenticated, (req, res) => {
 
 app.delete('/api/projects/:id', isAuthenticated, (req, res) => {
   const projectId = req.params.id;
-  const userId = req.session.user.id;
-
-  try {
-    const changes = db
-      .transaction((projId, uid) => {
-        db
-          .prepare(`DELETE FROM dependencies 
-                    WHERE project_id = ? 
-                      AND user_id = ?`)
-          .run(projId, uid);
-
-        db
-          .prepare(`DELETE FROM tasks 
-                    WHERE project_id = ? 
-                      AND user_id = ?`)
-          .run(projId, uid);
-
-        return db
-          .prepare(`DELETE FROM projects 
-                    WHERE id = ? 
-                      AND user_id = ?`)
-          .run(projId, uid)
-          .changes;
-      })(projectId, userId);
-
-    res.json({ changes });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// --- TASK ENDPOINTS (Authenticated) ---
-
-app.get('/api/tasks', isAuthenticated, (req, res) => {
-  const { project_id } = req.query;
-  const userId = req.session.user.id; 
-
-  try {
-    let query = "SELECT * FROM tasks WHERE user_id = ?";
-    const params = [userId];
-
-    if (project_id !== undefined && project_id !== null) { 
-      query += " AND project_id = ?";
-      params.push(project_id);
-    }
-
-    const tasks = db.prepare(query).all(params);
-
-    res.json({ tasks: tasks });
-
-  } catch (error) {
-    console.error("Error fetching tasks:", error);
-    res.status(500).json({ error: "Failed to retrieve tasks" });
-  }
-});
-
-
-app.post('/api/tasks', isAuthenticated, (req, res) => {
-  const { title, posX = 0, posY = 0, completed, project_id, color } = req.body;
-
-  try {
-    const stmt = db.prepare(`
-      INSERT INTO tasks 
-        (title, posX, posY, completed, project_id, user_id, color) 
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-    const info = stmt.run(
-      title,
-      posX,
-      posY,
-      completed,
-      project_id,
-      req.session.user.id,
-      color || '#ffffff'
-    );
-
-    res.json({ id: info.lastInsertRowid });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-app.put('/api/tasks/:id', isAuthenticated, (req, res) => {
-  const { title, posX, posY, completed, color, project_id } = req.body;
-  try {
-    const stmt = db.prepare(`
-      UPDATE tasks
-      SET title      = ?,
-          posX       = ?,
-          posY       = ?,
-          completed  = ?,
-          color      = ?,
-          project_id = ?
-      WHERE id = ? AND user_id = ?
-    `);
-    const result = stmt.run(
-      title,
-      posX,
-      posY,
-      completed,
-      color,
-      project_id,
-      req.params.id,
-      req.session.user.id
-    );
-    res.json({ changes: result.changes });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-app.delete('/api/tasks/:id', isAuthenticated, (req, res) => {
-  const taskId = req.params.id;
-  const userId = req.session.user.id;
-
-  const deleteTaskAndDeps = db.transaction((taskId, userId) => {
-    db.prepare(`
-      DELETE FROM dependencies
-      WHERE (from_task = ? OR to_task = ?)
-        AND user_id = ?
-    `).run(taskId, taskId, userId);
-
-    return db.prepare(`
-      DELETE FROM tasks
-      WHERE id = ? AND user_id = ?
-    `).run(taskId, userId);
+  db.run("DELETE FROM projects WHERE id = ? AND user_id = ?", [projectId, req.session.user.id], function (err) {
+    if (err) return res.status(400).json({ error: err.message });
+    res.json({ changes: this.changes });
   });
-
-  try {
-    const result = deleteTaskAndDeps(taskId, userId);
-    res.json({ changes: result.changes });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
 });
 
-// --- DEPENDENCY ENDPOINTS (Authenticated) ---
 
-app.get('/api/dependencies', isAuthenticated, (req, res) => {
-  const { project_id } = req.query;
-  const userId = req.session.user.id; 
-
-  try {
-    let query = "SELECT * FROM dependencies WHERE user_id = ?";
-    const params = [userId];
-
-    if (project_id !== undefined && project_id !== null) { 
-      query += " AND project_id = ?";
-      params.push(project_id);
-    }
-
-    const dependencies = db.prepare(query).all(params);
-
-    res.json({ dependencies: dependencies });
-
-  } catch (error) {
-    console.error("Error fetching dependencies:", error);
-    res.status(500).json({ error: "Failed to retrieve dependencies" });
-  }
-});
-
-app.post('/api/dependencies', isAuthenticated, (req, res) => {
-  const { from_task, to_task, project_id } = req.body;
-  try {
-    const info = db.prepare(`
-      INSERT INTO dependencies
-        (from_task, to_task, project_id, user_id)
-      VALUES
-        (?, ?, ?, ?)
-    `).run(
-      from_task,
-      to_task,
-      project_id,
-      req.session.user.id
-    );
-    res.json({ id: info.lastInsertRowid });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-app.delete('/api/dependencies/:id', isAuthenticated, (req, res) => {
-  try
-  {
-    const info = db.prepare("DELETE FROM dependencies WHERE id = ? AND user_id = ?").run(req.params.id, req.session.user.id);
-    res.json({ changes: info.changes });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-async function generativeEdit(userInput, projectId, userId, currentState, chatHistory) {
+// Update the generativeEdit function signature to accept chatHistory
+async function generativeEdit(userInput, projectId, userId, currentState, chatHistory) { // Added chatHistory parameter
+  // Define Zod schema that matches our JSON schema
   const TaskSchema = z.object({
-    id: z.number(),
+    id: z.string(),
     title: z.string().optional(),
     posX: z.number().optional(),
     posY: z.number().optional(),
@@ -440,9 +249,9 @@ async function generativeEdit(userInput, projectId, userId, currentState, chatHi
   });
 
   const DependencySchema = z.object({
-    id: z.number(),
-    from_task: z.number(),
-    to_task: z.number(),
+    id: z.string(),
+    from_task: z.string(),
+    to_task: z.string(),
     project_id: z.number().optional(),
     user_id: z.number().optional(),
     delete: z.number().optional()
@@ -464,7 +273,7 @@ async function generativeEdit(userInput, projectId, userId, currentState, chatHi
       "items": {
         "type": "object",
         "properties": {
-          "id": {"type": "integer"},
+          "id": {"type": "string"},
           "title": {"type": "string"},
           "posX": {"type": "number"},
           "posY": {"type": "number"},
@@ -485,9 +294,9 @@ async function generativeEdit(userInput, projectId, userId, currentState, chatHi
       "items": {
         "type": "object",
         "properties": {
-          "id": {"type": "integer"},
-          "from_task": {"type": "integer"},
-          "to_task": {"type": "integer"},
+          "id": {"type": "string"},
+          "from_task": {"type": "string"},
+          "to_task": {"type": "string"},
           "project_id": {"type": "integer"},
           "user_id": {"type": "integer"},
           "delete": {"type": "integer"}
@@ -537,7 +346,7 @@ The graph must show **clear branching**: not every task should just point to the
 Consider the real-world logical flow of a project: planning, preparation, execution, testing, and finishing. Organize the tasks accordingly, and only include meaningful dependencies—avoid unnecessary chaining of unrelated steps.
 
 Each task object must include:
-- id (integer, negative number if a new task or re-use from the input otherwise)
+- id (string (uuid), or negative number if new task or re-use from the input otherwise)
 - **If the task is unchanged from the input state, include ONLY the 'id' and set 'no_change' to true.**
 - **Otherwise (for new or modified tasks), include:**
   - title (short, descriptive name)
@@ -552,7 +361,7 @@ Each task object must include:
 
 Each dependency object represents a link between two tasks. **Only include dependencies that are NEW or MODIFIED or being DELETED.** Omit dependencies that are unchanged from the input.
 Each included dependency object must include:
-- id (integer, negative if new, re-use from input otherwise)
+- id (string (uuid), or negative number if new, re-use from input otherwise)
 - from_task (source task id)
 - to_task (destination task id)
 - project_id and user_id (placeholders that will be filled in later)
@@ -576,7 +385,6 @@ Be thoughtful and detailed. The goal is to create a structured blueprint of the 
     // We still include a user role message, but it might be less critical now.
     { role: "user", content: userPrompt }
   ];
-
   try {
     // Use the structured output with Zod schema validation
     const completion = await openai.beta.chat.completions.parse({
@@ -729,4 +537,5 @@ app.post('/api/bulk-change', isAuthenticated, (req, res) => {
   }
 });
 
-export default app; // Export the app for testing purposes
+
+export { app, sessionParser, db };

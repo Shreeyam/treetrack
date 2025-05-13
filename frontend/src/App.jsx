@@ -1,20 +1,26 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ReactFlowProvider, applyNodeChanges, addEdge, applyEdgeChanges, } from '@xyflow/react';
+
+import { ReactFlowProvider, applyEdgeChanges, applyNodeChanges } from '@xyflow/react';
+import { useNodesState, useEdgesState } from '@xyflow/react';
+
 import '@xyflow/react/dist/style.css';
 import '@/globals.css';
 import "@/App.css";
+import { initializeHocusProvider } from "@/hocus.js";
 import * as dagre from 'dagre';
 import blendColors from './utils/colors';
 import AuthForm from '@/components/auth/AuthForm';
 import TopBar from '@/components/navigation/TopBar';
 import FlowArea from '@/components/flow/FlowArea';
 import { nodeStyles } from '@/components/flow/styles';
-import { fetchUser, fetchProjects, createProject, deleteProject, fetchTasksAndEdges, updateTask, deleteTask, deleteDependency } from './api';
-import ChatBot from './components/misc/Chatbot';
+import { fetchUser, fetchProjects, createProject, deleteProject } from './api';
+import ChatBot from './components/misc/chatbot';
 import ChecksumIndicator from './components/misc/ChecksumIndicator';
 import { createAddNewNode, mapWithChangeDetection } from './utils/nodeFunctions';
 import { useNavigate } from 'react-router';
 import { PromptDialog } from '@/components/ui/prompt-dialog';
+import throttle from 'lodash.throttle';
+import { v4 as uuidv4 } from 'uuid';
 
 // Memoize imported components
 const MemoAuthForm = React.memo(AuthForm);
@@ -25,8 +31,8 @@ function App({ user, setUser }) {
     // --- Main App States ---
     const [projects, setProjects] = useState([]);
     const [currentProject, setCurrentProject] = useState(''); // Don't load from localStorage until user is authenticated
-    const [nodes, setNodes] = useState([]);
-    const [edges, setEdges] = useState([]);
+    const [nodes, setNodes, onNodesChange] = useNodesState([]);
+    const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const [prevNodes, setPrevNodes] = useState([]);
     const [prevEdges, setPrevEdges] = useState([]);
     const [linkHighlight, setLinkHighlight] = useState(null);
@@ -49,7 +55,9 @@ function App({ user, setUser }) {
     const [deleteSubtreeDialog, setDeleteSubtreeDialog] = useState(false);
     const [nodeToDeleteSubtree, setNodeToDeleteSubtree] = useState(null);
     const [createProjectDialog, setCreateProjectDialog] = useState(false);
-
+    const [yjsHandler, setYjsHandler] = useState(null);
+    const [draftTaskIds, setDraftTaskIds] = useState([]);   // NEW
+    const [draftEdgeIds, setDraftEdgeIds] = useState([]);   // NEW
     // React Flow
     const reactFlowWrapper = useRef(null);
     const [reactFlowInstance, setReactFlowInstance] = useState(null);
@@ -57,6 +65,8 @@ function App({ user, setUser }) {
     const nodesRef = useRef(nodes);
     const edgesRef = useRef(edges);
     const currentProjectRef = useRef(currentProject);
+    const yjsHandlerRef = useRef(null);
+
 
     const navigate = useNavigate(); // Use useNavigate from react-router
 
@@ -74,14 +84,47 @@ function App({ user, setUser }) {
         currentProjectRef.current = currentProject;
     }, [currentProject]);
 
+    useEffect(() => {
+        yjsHandlerRef.current = yjsHandler;
+    }, [yjsHandler]);
+
+    // --- Node Management ---
+    const createNodeStyle = useCallback((color, completed, selected, draft) => {
+        const backgroundColor = completed ? memoBlendColors(color, '#e0e0e0', 0.5) : color;
+
+        // Base style for the node
+        let style = {
+            ...nodeStyles,
+            backgroundColor,
+            color: completed ? '#888' : 'inherit',
+            outline: selected ? '2px solid blue' : '1px solid #ccc',
+        };
+
+        // If the node is a draft, overlay animated diagonal stripes
+        if (draft) {
+            style = {
+                ...style,
+                backgroundImage: `repeating-linear-gradient(
+                    45deg,
+                    rgba(0, 0, 0, 0.1),
+                    rgba(0, 0, 0, 0.1) 10px,
+                    transparent 10px,
+                    transparent 20px
+                )`,
+                backgroundSize: '57px 57px',
+                animation: 'draftAnimation 3s linear infinite',
+            };
+        }
+
+        return style;
+    }, [blendColors, memoBlendColors]);
+
     // --- Session Management ---
     useEffect(() => {
         fetchUser()
             .then(data => {
                 if (data.user) {
                     setUser(data.user);
-                    // Replaced alert(data) with a more descriptive message
-
                 }
                 else { navigate('/login'); } // Redirect to login if no user data
             })
@@ -116,36 +159,220 @@ function App({ user, setUser }) {
         }
     }, [user]);
 
+    // Modified to initialize Yjs provider when project changes
+    const fetchTasksAndEdges = useCallback(async (projectId) => {
+        if (!projectId || !user) return;
+
+        console.log(`Initializing Yjs for project: ${projectId}`);
+
+        // Clean up previous provider if exists
+        if (yjsHandlerRef.current && yjsHandlerRef.current.provider) {
+            console.log("Destroying previous Yjs provider");
+            yjsHandlerRef.current.provider.destroy();
+        }
+
+        // Initialize new provider for this project
+        const handler = initializeHocusProvider(projectId, user);
+        setYjsHandler(handler);
+
+        // Get initial data from the Yjs document
+        const { nodes: flowNodes, edges: flowEdges } = handler.getReactFlowData();
+
+        // Convert to React Flow format with proper styling
+        const formattedNodes = flowNodes.map(node => ({
+            ...node,
+            style: createNodeStyle(node.data.color || '#ffffff', node.data.completed),
+            sourcePosition: 'right',
+            targetPosition: 'left'
+        }));
+
+        // Set nodes and edges in React Flow
+        setNodes(formattedNodes);
+        setEdges(flowEdges);
+        // Set up document-level observer for real-time updates
+        // This will catch ALL Yjs document changes, including nested property updates
+        handler.provider.document.on('update', () => {
+            const { nodes: updatedNodes, edges: updatedEdges } = handler.getReactFlowData();
+            // Update nodes with more granularity to preserve local states
+            setNodes((currentNodes) => {
+                // Create maps for efficient lookups
+                const currentNodesMap = new Map(currentNodes.map(node => [node.id, node]));
+                const updatedNodesMap = new Map(updatedNodes.map(node => [node.id, node]));
+
+                // Track which nodes have changed to avoid unnecessary updates
+                let hasChanges = false;
+
+                // Process all current and updated nodes
+                const mergedNodes = currentNodes.map(currentNode => {
+                    const updatedNode = updatedNodesMap.get(currentNode.id);
+
+                    // Node doesn't exist in YJS anymore (deleted by another user)
+                    if (!updatedNode) {
+                        hasChanges = true;
+                        return null;
+                    }
+
+                    // Check if any YJS-synced properties have changed
+                    const positionChanged =
+                        currentNode.position.x !== updatedNode.position.x ||
+                        currentNode.position.y !== updatedNode.position.y;
+
+                    const dataChanged =
+                        currentNode.data.label !== updatedNode.data.label ||
+                        currentNode.data.completed !== updatedNode.data.completed ||
+                        currentNode.data.color !== updatedNode.data.color;
+
+                    // If nothing changed, keep current node reference
+                    if (!positionChanged && !dataChanged) {
+                        return currentNode;
+                    }
+
+                    // Some property changed - merge updated values with current state
+                    hasChanges = true;
+                    return {
+                        ...currentNode, // Keep all current properties
+                        position: updatedNode.position, // Update position from YJS
+                        data: {
+                            ...currentNode.data, // Keep other data properties
+                            label: updatedNode.data.label, // Update synced properties
+                            completed: updatedNode.data.completed,
+                            color: updatedNode.data.color,
+                        },
+                        style: createNodeStyle(
+                            updatedNode.data.color,
+                            updatedNode.data.completed,
+                            currentNode.selected,
+                            currentNode.draft
+                        ),
+                    };
+                }).filter(Boolean); // Remove null entries (deleted nodes)
+
+                // Add new nodes from YJS that don't exist in current state
+                updatedNodes.forEach(updatedNode => {
+                    if (!currentNodesMap.has(updatedNode.id)) {
+                        hasChanges = true;
+                        // Format new node with proper styles
+                        mergedNodes.push({
+                            ...updatedNode,
+                            style: createNodeStyle(
+                                updatedNode.data.color || '#ffffff',
+                                updatedNode.data.completed,
+                                false, // not selected
+                                false  // not draft
+                            ),
+                            sourcePosition: 'right',
+                            targetPosition: 'left'
+                        });
+                    }
+                });
+
+                // Only return new array if there were changes
+                return hasChanges ? mergedNodes : currentNodes;
+            });
+
+            // Handle edges - similar approach
+            setEdges((currentEdges) => {
+                const currentEdgesMap = new Map(currentEdges.map(edge => [edge.id, edge]));
+                const updatedEdgesMap = new Map(updatedEdges.map(edge => [edge.id, edge]));
+
+                let hasEdgeChanges = false;
+
+                // Keep existing edges that are still in YJS data, remove deleted ones
+                const mergedEdges = currentEdges
+                    .map(edge => {
+                        // Edge was deleted in YJS
+                        if (!updatedEdgesMap.has(edge.id)) {
+                            hasEdgeChanges = true;
+                            return null;
+                        }
+
+                        // No changes to the edge
+                        return edge;
+                    })
+                    .filter(Boolean);
+
+                // Add new edges from YJS
+                updatedEdges.forEach(updatedEdge => {
+                    if (!currentEdgesMap.has(updatedEdge.id)) {
+                        hasEdgeChanges = true;
+                        mergedEdges.push(updatedEdge);
+                    }
+                });
+
+                return hasEdgeChanges ? mergedEdges : currentEdges;
+            });
+        });        // Awareness: live dragging from all users with enhanced batch support
+        handler.awareness.on("change", () => {
+            const states = Array.from(handler.awareness.getStates().values());
+
+            // Initialize drag position map
+            let dragMap = {};
+
+            // First collect individual drag updates (backward compatibility)
+            states.forEach(state => {
+                if (state.drag) {
+                    dragMap[state.drag.nodeId] = {
+                        x: state.drag.posX,
+                        y: state.drag.posY
+                    };
+                }
+            });
+
+            // Then merge in batch updates (new optimized format)
+            states.forEach(state => {
+                if (state.batchDrag && Array.isArray(state.batchDrag)) {
+                    state.batchDrag.forEach(dragItem => {
+                        dragMap[dragItem.nodeId] = {
+                            x: dragItem.posX,
+                            y: dragItem.posY
+                        };
+                    });
+                }
+            });
+
+            // If nothing is being dragged, no work:
+            if (!Object.keys(dragMap).length) return;
+
+            // Performance optimization: Use updater function that only creates new array if needed
+            setNodes(nodes => {
+                let hasChanges = false;
+                const updatedNodes = nodes.map(n => {
+                    // Skip nodes that the local user is currently dragging to avoid jitter
+                    if (locallyDraggedNodes.current && locallyDraggedNodes.current.has(n.id)) {
+                        return n;
+                    }
+
+                    // Apply remote drag updates
+                    if (dragMap[n.id]) {
+                        hasChanges = true;
+                        return {
+                            ...n,
+                            position: dragMap[n.id]  // <- live update!
+                        };
+                    }
+
+                    return n;
+                });
+
+                // Only create new array if there were actual changes
+                return hasChanges ? updatedNodes : nodes;
+            });
+        });
+    }, [user, createNodeStyle]);
+
     useEffect(() => {
-        if (currentProject && user && user.id) { // Only fetch data if we have a valid user and project
-            fetchTasksAndEdges(currentProject)
-                .then(({ tasks, dependencies }) => {
-                    const newNodes = tasks.map(task => ({
-                        id: task.id.toString(),
-                        data: { label: task.title, completed: task.completed === 1, color: task.color || '#ffffff' },
-                        position: { x: task.posX, y: task.posY },
-                        style: createNodeStyle(task.color || '#ffffff', task.completed === 1),
-                        sourcePosition: 'right',
-                        targetPosition: 'left'
-                    }));
-
-                    const newEdges = dependencies.map(dep => ({
-                        id: dep.id.toString(),
-                        source: dep.from_task.toString(),
-                        target: dep.to_task.toString(),
-                        markerEnd: { type: 'arrowclosed' }
-                    }));
-
-                    setNodes(newNodes);
-                    setEdges(newEdges);
-                })
-                .catch(err => console.error(err));
-
+        if (currentProject && user && user.id) {
+            fetchTasksAndEdges(currentProject);
             localStorage.setItem('currentProject', currentProject);
         }
-    }, [currentProject, user]); // Add user as a dependency
+    }, [currentProject, user, fetchTasksAndEdges]);
 
     const handleLogout = useCallback(() => {
+        // Clean up Yjs provider before logout
+        if (yjsHandlerRef.current && yjsHandlerRef.current.provider) {
+            yjsHandlerRef.current.provider.destroy();
+        }
+
         fetch('/api/logout', { method: 'POST', credentials: 'include' })
             .then(() => {
                 setUser(null);
@@ -213,104 +440,127 @@ function App({ user, setUser }) {
             })
             .catch(err => console.error(err));
         setDeleteProjectDialog(false);
-    }, [currentProject]);
-
-    const handleCancelDeleteProject = useCallback(() => {
+    }, [currentProject]); const handleCancelDeleteProject = useCallback(() => {
         setDeleteProjectDialog(false);
+    }, []);    // Helper function to synchronize node changes with YJS
+    const syncNodeWithYJS = useCallback((nodeId) => {
+        if (!yjsHandlerRef.current) return;
+
+        // Find the current node data in React state
+        const node = nodesRef.current.find(n => n.id === nodeId);
+        if (!node || node.draft) return; // Skip missing or draft nodes
+
+        // Update all properties in YJS
+        yjsHandlerRef.current.updateTask(nodeId, {
+            title: node.data.label,
+            posX: node.position.x,
+            posY: node.position.y,
+            completed: node.data.completed,
+            color: node.data.color
+        });
     }, []);
 
-    // --- Node Management ---
-    const createNodeStyle = useCallback((color, completed, selected, draft) => {
-        const backgroundColor = completed ? memoBlendColors(color, '#e0e0e0', 0.5) : color;
+    // --- Node dragging --------------------------------------------------------
+    // Track which nodes the local user is currently dragging
+    const locallyDraggedNodes = useRef(new Set());
 
-        // Base style for the node
-        let style = {
-            ...nodeStyles,
-            backgroundColor,
-            color: completed ? '#888' : 'inherit',
-            outline: selected ? '2px solid blue' : '1px solid #ccc',
-        };
+    // Store currently selected nodes for batch operations
+    const selectedNodesRef = useRef([]);
 
-        // If the node is a draft, overlay animated diagonal stripes
-        if (draft) {
-            style = {
-                ...style,
-                backgroundImage: `repeating-linear-gradient(
-                    45deg,
-                    rgba(0, 0, 0, 0.1),
-                    rgba(0, 0, 0, 0.1) 10px,
-                    transparent 10px,
-                    transparent 20px
-                )`,
-                backgroundSize: '57px 57px',
-                animation: 'draftAnimation 3s linear infinite',
-            };
-        }
+    // Throttled batch update function - more aggressive for multi-node operations
+    const throttledBatchUpdate = useMemo(
+        () =>
+            throttle(
+                (draggedNodes) => {
+                    if (!yjsHandlerRef.current) return;
 
-        return style;
-    }, [blendColors, memoBlendColors]);
-
-    const onNodesChange = useCallback(
-        (changes) =>
-            setNodes((prev) => {
-                if (!changes.length) return prev;
-
-                /** Build a quick lookup table for the changed nodes */
-                const changed = new Map();
-                changes.forEach((c) => changed.set(c.id, c));
-
-                let mutated = false;
-
-                const next = prev.map((node) => {
-                    const change = changed.get(node.id);
-                    if (!change) return node; // untouched → keep original reference
-
-                    mutated = true;
-
-                    /** Let React‑Flow merge the positional / selection changes */
-                    const updated = applyNodeChanges([change], [node])[0];
-
-                    /** Re‑compute style *only* if something visual actually changed */
-                    const needsNewStyle =
-                        "selected" in change ||
-                        (change.type === "dimensions" && node.data.completed !== updated.data.completed);
-
-                    return needsNewStyle
-                        ? {
-                            ...updated,
-                            style: createNodeStyle(
-                                updated.data.color,
-                                updated.data.completed,
-                                updated.selected,
-                                updated.draft
-                            ),
-                        }
-                        : updated;
-                });
-
-                return mutated ? next : prev;
-            }),
-        [createNodeStyle]
+                    yjsHandlerRef.current.setBatchDragState(
+                        draggedNodes.length ? draggedNodes : null
+                    );
+                },
+                30,                 // wait
+                { leading: true }   // (optional) skip the immediate first call
+            ),
+        []                       // ← create only once
     );
 
+    // 1. every tiny move → awareness with improved batching
+    const onNodeDrag = useCallback((_, node) => {
+        // Add this node to our locally dragged set
+        locallyDraggedNodes.current.add(node.id);
+
+        // Find all selected nodes to batch update together
+        const nodesToUpdate = [];
+
+        // Always include the current node being dragged
+        nodesToUpdate.push(node);
+
+        // If the node being dragged is selected, also include other selected nodes
+        if (node.selected) {
+            const selectedNodes = nodesRef.current.filter(n =>
+                n.selected && n.id !== node.id // Include other selected nodes
+            );
+            nodesToUpdate.push(...selectedNodes);
+        }
+
+        // Store current selection for use in drag stop
+        selectedNodesRef.current = nodesToUpdate;
+
+        // Use the throttled batch update with adaptive timing
+
+        throttledBatchUpdate(nodesToUpdate);
+    }, []);
+
+    // 2. drop → clear awareness + persist final position with batch updates
     const onNodeDragStop = useCallback(
         (event, node) => {
+            if (node.draft) return;
+
+            // Get all affected nodes (the dragged node and any selected nodes if this was part of a multi-select)
+            const affectedNodes = selectedNodesRef.current.length > 0 && node.selected
+                ? selectedNodesRef.current
+                : [node];
+
+            // Clear all from locally dragged set
+            affectedNodes.forEach(n => {
+                locallyDraggedNodes.current.delete(n.id);
+            });
+
+            // Clear awareness state
+            yjsHandlerRef.current?.setBatchDragState(null);
+
             // Wait one frame so React-Flow finishes updating the node state
             requestAnimationFrame(() => {
-                const latest = nodesRef.current.find(n => n.id === node.id);
-                if (!latest || latest.draft) return;   // ignore missing or AI-draft nodes
+                // Batch sync the final positions with YJS
+                const taskUpdates = affectedNodes.map(n => {
+                    // Find the current node data in React state (to get the most up-to-date position)
+                    const currentNode = nodesRef.current.find(current => current.id === n.id);
+                    if (!currentNode || currentNode.draft) return null;
 
-                updateTask(latest.id, {
-                    title: latest.data.label,
-                    posX: latest.position.x,
-                    posY: latest.position.y,
-                    completed: latest.data.completed ? 1 : 0,
-                    color: latest.data.color,
-                    project_id: parseInt(currentProjectRef.current)
-                });
+                    return {
+                        id: currentNode.id,
+                        data: {
+                            posX: currentNode.position.x,
+                            posY: currentNode.position.y
+                        }
+                    };
+                }).filter(Boolean); // Remove any null entries
+
+                // Use batch update if available and we have multiple nodes
+                if (yjsHandlerRef.current?.updateMultipleTasks && taskUpdates.length > 1) {
+                    yjsHandlerRef.current.updateMultipleTasks(taskUpdates);
+                } else {
+                    // Fall back to individual updates
+                    taskUpdates.forEach(update => {
+                        syncNodeWithYJS(update.id);
+                    });
+                }
+
+                // Clear selection cache
+                selectedNodesRef.current = [];
             });
         },
-        []  // No dependencies needed as we're using refs for current state
+        [syncNodeWithYJS]
     );
 
     const addNewNode = useCallback(
@@ -328,122 +578,117 @@ function App({ user, setUser }) {
             setLastNodePosition,
             setNewTaskTitle,
             setNodes,
-            position
+            position,
+            yjs: yjsHandlerRef.current // Pass Yjs handler to node creation function
         })(),
         [newTaskTitle, currentProject, reactFlowInstance, reactFlowWrapper, lastNodePosition, cascadeCount, cascadeStartPoint, createNodeStyle]
     );
 
     // --- Edge Management ---
-    const onEdgesChange = useCallback(
+    const customOnEdgesChange = useCallback(
         (changes) => {
-            setEdges((prevEdges) => applyEdgeChanges(changes, prevEdges));
-
-            // Handle edge deletion from the context menu
             changes.forEach(change => {
-                if (change.type === 'remove') {
-                    deleteDependency(change.id);
+                if (change.type === 'remove' && yjsHandlerRef.current) {
+                    yjsHandlerRef.current.deleteDependency(change.id);
                 }
             });
+            // For non-remove changes (e.g., selection), let useEdgesState handle it
+            const filtered = changes.filter(c => c.type !== 'remove');
+            if (filtered.length > 0) {
+                setEdges((prevEdges) => applyEdgeChanges(filtered, prevEdges));
+            }
         },
-        [] // No dependencies needed as deleteDependency is stable
+        [] // No dependencies needed as we're using refs
     );
 
-    const onConnect = useCallback(
+    const onConnect = useCallback( //on connect is called when a new edge is created
         (params) => {
-            // Check if the edge already exists
-            const tempEdgeId = `e${params.source}-${params.target}`;
-            const newEdge = { ...params, id: tempEdgeId, markerEnd: { type: 'arrowclosed' } };
-
-            setEdges((eds) => addEdge(newEdge, eds));
-
-            fetch('/api/dependencies', {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    from_task: parseInt(params.source),
-                    to_task: parseInt(params.target),
-                    project_id: parseInt(currentProject)
-                })
-            })
-                .then(res => res.json())
-                .then(data => {
-                    setEdges((prevEdges) =>
-                        prevEdges.map(e =>
-                            e.id === tempEdgeId ? { ...e, id: data.id.toString() } : e
-                        )
-                    );
-                });
+            if (!yjsHandlerRef.current) {
+                console.error("Yjs handler not available");
+                return;
+            }
+            // Use Yjs to add dependency; Yjs observer will update edges
+            console.log("Adding dependency:", params.source, params.target);
+            yjsHandlerRef.current.addDependency(params.source, params.target);
         },
-        [currentProject, edges]
+        []
     );
 
-    // --- Node Interaction Handlers ---
-    const handleNodeClick = useCallback(
-        (event, node) => {
-            if (contextMenu.visible) {
-                setContextMenu({ visible: false, x: 0, y: 0, node: null });
-            }
+const handleNodeClick = useCallback(
+  (event, node) => {
+    // 1) Close any open context menu
+    if (contextMenu.visible) {
+      setContextMenu({ visible: false, x: 0, y: 0, node: null });
+    }
 
-            if (event.shiftKey) {
-                // If we don't have any selected nodes, select the clicked node and go into selection mode
-                const currentSelectedNodes = nodesRef.current.filter(n => n.selected);
+    // 2) Shift-clicking nodes drives link/unlink mode
+    if (event.shiftKey) {
+      const currentSelectedNodes = nodesRef.current.filter(n => n.selected);
 
-                if (currentSelectedNodes.length === 0 || (linkHighlight && (linkHighlight.source && linkHighlight.target))) {
-                    setLinkHighlight({ source: node.id, target: null });
-                } else if (currentSelectedNodes.length === 1 || linkHighlight) {
-                    const sourceNode = currentSelectedNodes[0] || linkHighlight;
+      // If nothing is selected yet, start a new link “source”
+      if (currentSelectedNodes.length === 0 || (linkHighlight?.source && linkHighlight?.target)) {
+        setLinkHighlight({ source: node.id, target: null });
+      } else {
+        // Otherwise we have a source, so attempt to link/unlink
+        const sourceNodeId = currentSelectedNodes[0]?.id ?? linkHighlight.source;
+        if (sourceNodeId === node.id) {
+          // no self-links
+          return;
+        }
 
-                    // Don't link them if they are the same node
-                    if (sourceNode.id === node.id) {
-                        return;
-                    }
+        // Find an existing edge
+        const existingEdge = edgesRef.current.find(
+          e => e.source === sourceNodeId && e.target === node.id
+        );
 
-                    // First, check if they are linked
-                    const edge = edgesRef.current.find(e => e.source === sourceNode.id && e.target === node.id);
+        if (existingEdge) {
+          // **UNLINK** via Yjs, not setEdges
+          if (yjsHandlerRef.current) {
+            yjsHandlerRef.current.deleteDependency(existingEdge.id);
+          }
+          // still show a little unlink flash
+          setUnlinkHighlight({ source: sourceNodeId, target: node.id });
+          setTimeout(() => {
+            setUnlinkHighlight(null);
+            setLinkHighlight(null);
+          }, 400);
+        } else {
+          // **LINK** via onConnect → Yjs
+          onConnect({ source: sourceNodeId, target: node.id });
+          setLinkHighlight({ source: sourceNodeId, target: node.id });
+          setTimeout(() => setLinkHighlight(null), 400);
+        }
 
-                    if (edge) {
-                        setEdges((eds) => eds.filter(e => e.id !== edge.id));
-                        deleteDependency(edge.id);
-                        setUnlinkHighlight({ source: sourceNode.id, target: node.id });
-                        setTimeout(() => setUnlinkHighlight(null) || setLinkHighlight(null), 400);
-                    } else {
-                        // Otherwise, link them!
-                        onConnect({
-                            source: sourceNode.id,
-                            target: node.id
-                        });
-                        console.log({ source: sourceNode.id, target: node.id });
-                        setLinkHighlight({ source: sourceNode.id, target: node.id });
-                        setTimeout(() => setLinkHighlight(null), 400);
-                    }
+        // clear any “selected” styling on nodes
+        setNodes(ns =>
+          ns.map(n => {
+            if (!n.selected) return n;
+            const unselected = { ...n, selected: false };
+            return {
+              ...unselected,
+              style: createNodeStyle(
+                unselected.data.color,
+                unselected.data.completed,
+                false,
+                unselected.draft
+              ),
+            };
+          })
+        );
+      }
+    }
+  },
+  // note: we include the things we actually read from outer scope
+  [contextMenu, linkHighlight, onConnect, yjsHandlerRef]
+);
 
-                    // Remove any selections    
-                    setNodes(nodes =>
-                        nodes.map(n => {
-                            if (!n.selected) return n;
-
-                            const cleared = { ...n, selected: false };
-                            return {
-                                ...cleared,
-                                style: createNodeStyle(
-                                    cleared.data.color,
-                                    cleared.data.completed,
-                                    false,
-                                    cleared.draft
-                                ),
-                            };
-                        }),
-                    );
-                }
-
-            }
-        },
-        [contextMenu, linkHighlight, onConnect]
-    );
 
     const handleToggleCompleted = useCallback((node) => {
+        if (node.draft) return;
+
         const updatedCompleted = !node.data.completed;
+
+        // Update React state
         setNodes(prev =>
             prev.map(n =>
                 n.id === node.id
@@ -456,17 +701,16 @@ function App({ user, setUser }) {
             )
         );
 
-        updateTask(node.id, {
-            title: node.data.label,
-            posX: node.position.x,
-            posY: node.position.y,
-            completed: updatedCompleted ? 1 : 0,
-            color: node.data.color,
-            project_id: parseInt(currentProject)
+        // Schedule YJS update after React state update
+        requestAnimationFrame(() => {
+            syncNodeWithYJS(node.id);
         });
-    }, [currentProject, createNodeStyle]);
+    }, [createNodeStyle, syncNodeWithYJS])
 
     const handleUpdateNodeColor = useCallback((node, color) => {
+        if (node.draft) return;
+
+        // Update React state
         setNodes(prev =>
             prev.map(n =>
                 n.id === node.id
@@ -479,58 +723,48 @@ function App({ user, setUser }) {
             )
         );
 
-        updateTask(node.id, {
-            title: node.data.label,
-            posX: node.position.x,
-            posY: node.position.y,
-            completed: node.data.completed ? 1 : 0,
-            color,
-            project_id: parseInt(currentProject)
+        // Schedule YJS update after React state update
+        requestAnimationFrame(() => {
+            syncNodeWithYJS(node.id);
         });
-    }, [currentProject, createNodeStyle]);
+    }, [createNodeStyle, syncNodeWithYJS]);
 
     const handleEditNode = useCallback((node) => {
         setNodeToEdit(node);
         setEditDialogOpen(true);
-    }, []);
-
-    const handleEditSubmit = useCallback((newTitle) => {
-        if (newTitle && newTitle.trim() && nodeToEdit) {
+    }, []); const handleEditSubmit = useCallback((newTitle) => {
+        if (newTitle && newTitle.trim() && nodeToEdit && !nodeToEdit.draft) {
+            // Update React state
             setNodes(prev =>
                 prev.map(n => n.id === nodeToEdit.id ? { ...n, data: { ...n.data, label: newTitle } } : n)
             );
 
-            updateTask(nodeToEdit.id, {
-                title: newTitle,
-                posX: nodeToEdit.position.x,
-                posY: nodeToEdit.position.y,
-                color: nodeToEdit.data.color,
-                completed: nodeToEdit.data.completed ? 1 : 0,
-                project_id: parseInt(currentProject)
+            // Schedule YJS update after React state update
+            requestAnimationFrame(() => {
+                syncNodeWithYJS(nodeToEdit.id);
             });
         }
         setEditDialogOpen(false);
         setNodeToEdit(null);
-    }, [nodeToEdit, currentProject]);
+    }, [nodeToEdit, syncNodeWithYJS]);
 
     const handleCancelEdit = useCallback(() => {
         setEditDialogOpen(false);
         setNodeToEdit(null);
-    }, []);
+    }, []); const handleDeleteNode = useCallback((node) => {
+        if (node.draft) return;
+        if (!yjsHandlerRef.current) return;
 
-    const handleDeleteNode = useCallback((node) => {
-        deleteTask(node.id);
-        setNodes(prev => prev.filter(n => n.id !== node.id));
-        setEdges(prev => prev.filter(e => e.source !== node.id && e.target !== node.id));
+        // Delete from Yjs document - this will trigger the YJS observer
+        // which will update the React state automatically
+        yjsHandlerRef.current.deleteTask(node.id);
     }, []);
 
     const handleDeleteSubtree = useCallback((node) => {
         setNodeToDeleteSubtree(node);
         setDeleteSubtreeDialog(true);
-    }, []);
-
-    const handleConfirmDeleteSubtree = useCallback(() => {
-        if (!nodeToDeleteSubtree) return;
+    }, []); const handleConfirmDeleteSubtree = useCallback(() => {
+        if (!nodeToDeleteSubtree || !yjsHandlerRef.current) return;
 
         const toDelete = new Set();
         const dfs = (nodeId) => {
@@ -539,11 +773,12 @@ function App({ user, setUser }) {
             edges.filter(e => e.source === nodeId).forEach(e => dfs(e.target));
         };
         dfs(nodeToDeleteSubtree.id);
+
+        // Delete tasks from Yjs document - this will trigger the YJS observer
+        // which will update the React state automatically
         toDelete.forEach(nodeId => {
-            deleteTask(nodeId);
+            yjsHandlerRef.current.deleteTask(nodeId);
         });
-        setNodes(prev => prev.filter(n => !toDelete.has(n.id)));
-        setEdges(prev => prev.filter(e => !toDelete.has(e.source) && !toDelete.has(e.target)));
 
         setDeleteSubtreeDialog(false);
         setNodeToDeleteSubtree(null);
@@ -554,355 +789,125 @@ function App({ user, setUser }) {
         setNodeToDeleteSubtree(null);
     }, []);
 
-    const handleGenerativeEdit = useCallback((data) => {
-        // --- Capture previous state BEFORE applying changes ---
-        setPrevNodes(nodesRef.current); // Use refs for the most current state
-        setPrevEdges(edgesRef.current);
 
-        // Create maps for efficient lookup of existing items
-        const prevNodeMap = new Map(nodesRef.current.map(node => [node.id, node]));
-        const prevEdgeMap = new Map(edgesRef.current.map(edge => [edge.id, edge]));
+    const handleGenerativeEdit = useCallback(async (projectData) => {
+        const { tasks: aiTasks, dependencies: aiDeps } = projectData;
+        const { addTask, updateTask, deleteTask, addDependency, deleteDependency, provider, undoManager } = yjsHandlerRef.current;
 
-        // Compute the current maximum IDs for nodes and edges (assuming numeric IDs in string format)
-        const maxNodeId = nodesRef.current.length > 0
-            ? Math.max(...nodesRef.current.map(node => parseInt(node.id, 10)))
-            : 0;
-        const maxEdgeId = edgesRef.current.length > 0
-            ? Math.max(...edgesRef.current.map(edge => parseInt(edge.id, 10)))
-            : 0;
+        // Keep track of the real IDs we end up using for each AI task
+        const idMap = new Map();
+        const newDraftNodeIds = [];
+        const newDraftEdgeIds = [];
 
-        let nextNodeId = maxNodeId;
-        let nextEdgeId = maxEdgeId;
+        provider.document.transact(() => {
+            aiTasks.forEach(t => {
+                const exists = yjsHandlerRef.current.tasks.has(t.id);
 
-        // Create a mapping from the incoming task IDs to the assigned IDs.
-        // This is needed so that dependencies referencing new tasks can be updated accordingly.
-        const taskIdMapping = {};
-
-        // Process tasks to create the updated nodes. For new tasks (i.e. not found in prevNodeMap),
-        // assign a new auto-incremented ID.
-        const updatedNodes = data.tasks.map(task => {
-            const origId = task.id.toString();
-
-            // --- Handle no_change --- 
-            if (task.no_change) {
-                const existingNode = prevNodeMap.get(origId);
-                if (existingNode) {
-                    // Return the existing node as is, ensuring draft is false
-                    return { ...existingNode, draft: false };
-                } else {
-                    // Should not happen if AI follows instructions, but handle defensively
-                    console.warn(`Task ${origId} marked no_change but not found in previous state.`);
-                    return null; // Or handle as an error
+                if (t.delete) {
+                    deleteTask(t.id);
+                    return;
                 }
-            }
-            // --- End handle no_change ---
 
-            // If the task has a delete flag set to true, mark it for deletion.
-            if (task.delete) {
-                return { id: origId, delete: true };
-            }
-
-            // Determine if this task is new. If it's not in the previous state, assign a new ID.
-            let assignedId;
-            if (prevNodeMap.has(origId)) {
-                assignedId = origId;
-            } else {
-                // Avoid reassigning a new ID if we've already done so in this update
-                if (taskIdMapping[origId]) {
-                    assignedId = taskIdMapping[origId];
-                } else {
-                    nextNodeId += 1;
-                    assignedId = nextNodeId.toString();
-                    taskIdMapping[origId] = assignedId;
+                if (!exists) {
+                    // brand-new: *we* generate the UUID
+                    const realId = uuidv4();
+                    addTask({
+                        id: realId,
+                        title: t.title,
+                        posX: t.posX,
+                        posY: t.posY,
+                        completed: t.completed,
+                        color: t.color,
+                    });
+                    idMap.set(t.id, realId);
+                    newDraftNodeIds.push(realId);
+                } else if (!t.no_change) {
+                    updateTask(t.id, {
+                        title: t.title,
+                        posX: t.posX,
+                        posY: t.posY,
+                        completed: t.completed,
+                        color: t.color
+                    });
+                    newDraftNodeIds.push(t.id);
                 }
-            }
-
-            // Also map existing tasks for dependency lookups
-            if (!taskIdMapping[origId]) {
-                taskIdMapping[origId] = assignedId;
-            }
-
-            const existingNode = prevNodeMap.get(origId);
-            const isDraft = true; // Mark all AI suggestions as draft initially
-            // Preserve the original position if the node exists; otherwise, use the incoming position.
-            const position = { x: task.posX, y: task.posY };
-            const color = (task.color && task.color.trim() !== "")
-                ? task.color
-                : (existingNode ? existingNode.data.color : '#ffffff');
-            const completed = task.completed === 1;
-
-            return {
-                id: assignedId,
-                data: { label: task.title, completed, color },
-                position: position,
-                style: createNodeStyle(color, completed, false, isDraft),
-                sourcePosition: 'right',
-                targetPosition: 'left',
-                draft: isDraft
-            };
-        }).filter(node => node !== null); // Filter out any nulls from no_change warning
-
-        // Process dependencies to create the updated edges.
-        // For each dependency, if it does not exist in the current state, assign a new, auto-incremented ID.
-        // Also update the source and target IDs using the taskIdMapping.
-        const updatedEdges = data.dependencies.map(dep => {
-            const origEdgeId = dep.id.toString();
-            // If the dependency has a delete flag set to true, mark it for deletion.
-            if (dep.delete) {
-                return { id: origEdgeId, delete: true };
-            }
-
-            let assignedEdgeId;
-            if (prevEdgeMap.has(origEdgeId)) {
-                assignedEdgeId = origEdgeId;
-            } else {
-                nextEdgeId += 1;
-                assignedEdgeId = nextEdgeId.toString();
-            }
-            // Update source and target based on task mapping (if the task was new).
-            const source = taskIdMapping[dep.from_task.toString()] || dep.from_task.toString();
-            const target = taskIdMapping[dep.to_task.toString()] || dep.to_task.toString();
-
-            // Ensure the source and target nodes for this edge actually exist in the final node list
-            const sourceNodeExists = updatedNodes.some(n => n.id === source && !n.delete) || prevNodeMap.has(source);
-            const targetNodeExists = updatedNodes.some(n => n.id === target && !n.delete) || prevNodeMap.has(target);
-
-            // If either the source or target node is being deleted or doesn't exist, mark the edge for deletion too.
-            if (!sourceNodeExists || !targetNodeExists) {
-                return { id: assignedEdgeId, delete: true };
-            }
-
-            return {
-                id: assignedEdgeId,
-                source,
-                target,
-                markerEnd: { type: 'arrowclosed' },
-                draft: true
-            };
-        });
-
-        // ---- Merge updated nodes ----
-        setNodes((prevNodes) => {
-            const nodeMap = new Map(prevNodes.map((n) => [n.id, n]));
-            updatedNodes.forEach((node) => {
-                if (node.delete) nodeMap.delete(node.id);
-                else nodeMap.set(node.id, node);
-            });
-            return [...nodeMap.values()];
-        });
-
-        // ---- Merge updated edges ----
-        setEdges((prevEdges) => {
-            const edgeMap = new Map(prevEdges.map((e) => [e.id, e]));
-            updatedEdges.forEach((edge) => {
-                if (edge.delete) edgeMap.delete(edge.id);
-                else edgeMap.set(edge.id, edge);
             });
 
-            // 🔧 FIX starts here
-            const survivingNodeIds = new Set(
-                [...edgeMap.values()]  // use any collection of nodes you already have
-                    .reduce((ids, e) => ids.add(e.source).add(e.target), new Set())
-            );
-            return [...edgeMap.values()].filter(
-                (edge) =>
-                    survivingNodeIds.has(edge.source) && survivingNodeIds.has(edge.target)
-            );
-        });
-    }, [createNodeStyle]);
-
-    const handleAcceptChanges = useCallback(async () => {
-        const currentNodes = nodesRef.current;
-        const currentEdges = edgesRef.current;
-        const projectId = parseInt(currentProjectRef.current, 10);
-        // Build maps of the previous state for quick lookups
-        const prevNodesMap = new Map(prevNodes.map((n) => [n.id, n]));
-        const prevEdgesMap = new Map(prevEdges.map((e) => [e.id, e]));
-
-        const createdTasks = [];
-        const updatedTasks = [];
-        const deletedTaskIds = [];
-
-        const createdDeps = [];
-        const updatedDeps = [];
-        const deletedDepIds = [];
-
-        // 1) Classify nodes
-        for (let node of currentNodes) {
-            // --- Skip nodes that weren't part of the draft changes --- 
-            if (!node.draft && !prevNodesMap.has(node.id)) {
-                // This node existed before and wasn't marked as draft (i.e., wasn't no_change or modified)
-                continue;
-            }
-            // --- If it *was* a draft, process it --- 
-            if (node.draft) {
-                const taskBody = {
-                    title: node.data.label,
-                    posX: node.position.x,
-                    posY: node.position.y,
-                    completed: node.data.completed ? 1 : 0,
-                    color: node.data.color,
-                    project_id: projectId,
-                };
-                if (prevNodesMap.has(node.id)) {
-                    // It existed before and was modified (draft=true)
-                    updatedTasks.push({ id: parseInt(node.id, 10), ...taskBody });
+            aiDeps.forEach(d => {
+                if (d.delete) {
+                    deleteDependency(d.id);
                 } else {
-                    // It's a new node (draft=true)
-                    createdTasks.push({ tempId: node.id, ...taskBody });
+                    // remap any AI task-IDs to our real IDs
+                    const from = idMap.get(d.from_task) || d.from_task;
+                    const to = idMap.get(d.to_task) || d.to_task;
+                    addDependency(from, to);
+                    newDraftEdgeIds.push(d.id);
                 }
-            }
-        }
-
-        // Deletions: anything in prevNodes that doesn't survive in currentNodes
-        for (let prev of prevNodes) {
-            if (!currentNodes.some((n) => n.id === prev.id)) {
-                deletedTaskIds.push(parseInt(prev.id, 10));
-            }
-        }
-
-        // 2) Classify edges (similar logic, skip non-drafts unless deleted)
-        for (let edge of currentEdges) {
-            if (!edge.draft && !prevEdgesMap.has(edge.id)) {
-                continue;
-            }
-            if (edge.draft) {
-                const depBody = {
-                    // Ensure source/target IDs are integers for the backend
-                    from_task: parseInt(edge.source, 10),
-                    to_task: parseInt(edge.target, 10),
-                    project_id: projectId,
-                };
-
-                if (prevEdgesMap.has(edge.id)) {
-                    updatedDeps.push({ id: parseInt(edge.id, 10), ...depBody });
-                } else {
-                    // Need to map temp task IDs if source/target were new tasks
-                    // Note: This assumes the backend handles mapping temp *edge* IDs implicitly
-                    // If backend needs temp edge IDs mapped, more logic is needed here.
-                    createdDeps.push(depBody);
-                }
-            }
-        }
-
-        for (let prev of prevEdges) {
-            if (!currentEdges.some((e) => e.id === prev.id)) {
-                deletedDepIds.push(parseInt(prev.id, 10));
-            }
-        }
-
-        // 3) Send bulk request (only if there are changes)
-        const payload = {
-            project_id: projectId,
-            tasks: {
-                created: createdTasks,
-                updated: updatedTasks,
-                deleted: deletedTaskIds,
-            },
-            dependencies: {
-                created: createdDeps,
-                updated: updatedDeps,
-                deleted: deletedDepIds,
-            },
-        };
-
-        // Only send if there's something to change
-        if (createdTasks.length === 0 && updatedTasks.length === 0 && deletedTaskIds.length === 0 &&
-            createdDeps.length === 0 && updatedDeps.length === 0 && deletedDepIds.length === 0) {
-            // Reset history even if no changes were sent
-            setPrevNodes([]);
-            setPrevEdges([]);
-            // Clear any potential lingering draft states just in case (though should be handled by no_change)
-            setNodes((nodes) => nodes.map((n) => n.draft ? { ...n, draft: false, style: createNodeStyle(n.data.color, n.data.completed, n.selected, false) } : n));
-            setEdges((edges) => edges.map((e) => e.draft ? { ...e, draft: false } : e));
-            return;
-        }
-
-        try {
-            // Optimistically clear the drafts in UI
-            setNodes((nodes) =>
-                nodes.map((n) =>
-                    n.draft
-                        ? {
-                            ...n,
-                            draft: false,
-                            style: createNodeStyle(n.data.color, n.data.completed, n.selected, false),
-                        }
-                        : n
-                )
-            );
-            setEdges((edges) =>
-                edges.map((e) => (e.draft ? { ...e, draft: false } : e))
-            );
-
-            const res = await fetch('/api/bulk-change', {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
             });
+        }, "generative");
 
-            if (!res.ok) {
-                throw new Error(`Bulk change failed with status: ${res.status}`);
-            }
+        // then mark them as drafts
+        setDraftTaskIds(newDraftNodeIds);
+        setDraftEdgeIds(newDraftEdgeIds);
 
-            const result = await res.json();
-
-            // 4) Replace temp IDs with real IDs
-            const idMap = new Map();
-            (result.tasksCreated || []).forEach(({ tempId, newId }) => {
-                idMap.set(String(tempId), String(newId));
-            });
-            // Map dependency IDs if backend provides them (assuming it might)
-            // Example: (result.dependenciesCreated || []).forEach(({ tempId, newId }) => { idMap.set(String(tempId), String(newId)); });
-
-            // Patch nodes
-            let patchedNodes = nodesRef.current.map((n) => {
-                const mapped = idMap.get(n.id);
-                return mapped
-                    ? { ...n, id: mapped }
-                    : n;
-            });
-
-            // Patch edges (source, target, and potentially edge ID itself)
-            let patchedEdges = edgesRef.current.map((e) => {
-                let src = idMap.get(e.source) || e.source;
-                let tgt = idMap.get(e.target) || e.target;
-                // let edgeId = idMap.get(e.id) || e.id; // If backend maps edge IDs
-                // return { ...e, id: edgeId, source: src, target: tgt };
-                return { ...e, source: src, target: tgt };
-            });
-
-            // Commit the patched graph
-            setNodes(patchedNodes);
-            setEdges(patchedEdges);
-
-            // Reset history
-            setPrevNodes([]);
-            setPrevEdges([]);
-        } catch (err) {
-            // Roll back on error
-            setNodes(prevNodes);
-            setEdges(prevEdges);
-            console.error('Bulk change failed', err);
-            // Optionally: Show an error message to the user
-        }
-    }, [
-        prevNodes,
-        prevEdges,
-        createNodeStyle,
-        currentProjectRef,
-        nodesRef,
-        edgesRef
-    ]);
-
-    const handleRejectChanges = useCallback(() => {
-        setNodes(prevNodes);
-        setEdges(prevEdges);
-
-        setPrevNodes([]);
-        setPrevEdges([]);
+        setNodes(prev =>
+            prev.map(n =>
+                newDraftNodeIds.includes(n.id)
+                    ? { ...n, draft: true, style: createNodeStyle(n.data.color, n.data.completed, n.selected, true) }
+                    : n
+            )
+        );
     }, [prevNodes, prevEdges]);
+    const handleAcceptChanges = useCallback(() => {
+        // simply clear the undo‐stack so you can no longer undo
+        yjsHandlerRef.current.undoManager.clear();
+        setDraftTaskIds([]);
+        setDraftEdgeIds([]);
+        setNodes(prev =>
+            prev.map(n =>
+                n.draft
+                    ? {
+                        ...n,
+                        draft: false,
+                        style: createNodeStyle(
+                            n.data.color,
+                            n.data.completed,
+                            n.selected,
+                            false           // stripes off
+                        ),
+                    }
+                    : n
+            )
+        );
+        setPrevNodes([]);    // if you still used these
+        setPrevEdges([]);
+    }, []);
+
+    // Reject: roll everything back
+    const handleRejectChanges = useCallback(() => {
+        // this will undo *all* the ops in that “generative” transaction
+        yjsHandlerRef.current.undoManager.undo();
+        // now clear the stack so it’s fresh next time
+        yjsHandlerRef.current.undoManager.clear();
+        setDraftTaskIds([]);
+        setDraftEdgeIds([]);
+        setNodes(prev =>
+            prev.map(n =>
+                n.draft
+                    ? {
+                        ...n,
+                        draft: false,
+                        style: createNodeStyle(
+                            n.data.color,
+                            n.data.completed,
+                            n.selected,
+                            false
+                        ),
+                    }
+                    : n
+            )
+        );
+    }, []);
 
     // --- Layout Management ---
     const handleAutoArrange = useCallback(() => {
@@ -941,19 +946,16 @@ function App({ user, setUser }) {
                 };
             }
             return node;
-        });
+        }); setNodes(newNodes);
 
-        setNodes(newNodes);
-        newNodes.forEach(node => {
-            !node.data.draft &&
-                updateTask(node.id, {
-                    title: node.data.label,
-                    posX: node.position.x,
-                    posY: node.position.y,
-                    color: node.data.color,
-                    completed: node.data.completed ? 1 : 0,
-                    project_id: parseInt(currentProject)
-                });
+        // Schedule synchronization after React state update
+        requestAnimationFrame(() => {
+            // Synchronize all nodes with YJS
+            newNodes.forEach(node => {
+                if (!node.draft) {
+                    syncNodeWithYJS(node.id);
+                }
+            });
         });
     }, []);
 
@@ -1029,9 +1031,10 @@ function App({ user, setUser }) {
                     outline: '2px solid green',
                 };
             } else if (showUpDownstream && isDownstream) {
-                nextStyle = { ...nextStyle, outline: '2px solid #EB6424', boxShadow: '0 0 10px 1px #EB6424' }; // Yellow for downstream + glow
+                nextStyle = { ...nextStyle, outline: '2px solid #FF6A1A', boxShadow: '0 0 10px 1px #FF6A1A' }; // Yellow for downstream + glow
             } else if (showUpDownstream && isUpstream) {
-                nextStyle = { ...nextStyle, outline: '2px solid #00B4D8', boxShadow: '0 0 10px 1px #00B4D8' }; // Purple for upstream + glow
+                nextStyle = { ...nextStyle, outline: '2px solid #00B8E6', boxShadow: '0 0 10px 1px #00B8E6' }; // Purple for upstream + glow
+
             } else if (highlightNext) {
                 nextStyle = nextTaskIds.has(node.id)
                     ? { ...nextStyle, opacity: 1 }
@@ -1079,6 +1082,39 @@ function App({ user, setUser }) {
     }
         , [reactFlowInstance]);
 
+    // --- Node Management ---
+    // Custom onNodesChange to update style for selection changes (UI only)
+    const customOnNodesChange = useCallback(
+        (changes) => {
+            setNodes((prevNodes) => {
+                let changed = false;
+                const nextNodes = prevNodes.map((node) => {
+                    const change = changes.find((c) => c.id === node.id);
+                    if (!change) return node;
+                    // Only update style if selection changed
+                    if (typeof change.selected === 'boolean' && change.selected !== node.selected) {
+                        changed = true;
+                        return {
+                            ...node,
+                            selected: change.selected,
+                            style: createNodeStyle(
+                                node.data.color,
+                                node.data.completed,
+                                change.selected,
+                                node.draft
+                            ),
+                        };
+                    }
+                    return node;
+                });
+                // Let useNodesState handle other changes (position, etc)
+                return changed ? nextNodes : applyNodeChanges(changes, prevNodes);
+            });
+        },
+        [createNodeStyle, setNodes]
+    );
+
+
     if (!user) {
         return <MemoAuthForm onLogin={setUser} />;
     }
@@ -1118,11 +1154,12 @@ function App({ user, setUser }) {
                 <MemoFlowArea
                     nodes={renderedNodes}
                     edges={visibleEdges}
-                    onNodesChange={onNodesChange}
-                    onEdgesChange={onEdgesChange}
+                    onNodesChange={customOnNodesChange}
+                    onEdgesChange={customOnEdgesChange}
                     onConnect={onConnect}
                     onNodeClick={handleNodeClick}
                     onNodeContextMenu={handleNodeContextMenu}
+                    onNodeDrag={onNodeDrag}
                     onNodeDragStop={onNodeDragStop}
                     onPaneClick={handlePaneClick}
                     contextMenu={contextMenu}
@@ -1171,12 +1208,12 @@ function App({ user, setUser }) {
                 onSubmit={handleConfirmCreateProject}
                 onCancel={handleCancelCreateProject}
             />
-
             {/* Checksum indicator - appears at the bottom left of the screen */}
             <ChecksumIndicator
                 nodes={nodes}
                 edges={edges}
                 currentProject={currentProject}
+                yjsHandler={yjsHandler}
             />
         </div>
     );

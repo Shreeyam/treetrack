@@ -12,9 +12,6 @@ import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import 'dotenv/config';
 
-
-const SQLiteStore = connectSqlite3(session);
-
 const openai = new OpenAI({
   apiKey: process.env.GEMINI_API_KEY,
   baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -32,9 +29,14 @@ app.use(express.json());
 
 app.set('trust proxy', 1);
 
+const db = new Database('./todos.db');
+db.pragma('foreign_keys = ON');
+
+
 // Configure sessions with a SQLite store.
+const sessionDb = new Database('sessions.db');
 const sessionParser = session({
-  store: new SQLiteStore({ db: 'sessions.db', dir: './' }),
+  store: new SqliteStore({ client: sessionDb }),
   secret: crypto.randomBytes(64).toString('hex'),
   resave: false,
   saveUninitialized: false,
@@ -46,38 +48,23 @@ const sessionParser = session({
 })
 app.use(sessionParser);
 
-// Connect to our main SQLite DB.
-const db = new sqlite3.Database('./todos.db', (err) => {
-  if (err) {
-    console.error("Error connecting to SQLite database:", err.message);
-  } else {
-    console.log('Connected to SQLite database.');
-    db.run("PRAGMA foreign_keys = ON");
-  }
-});
-
-db.serialize(() => {
-  // Create the users table.
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      premium BOOLEAN DEFAULT 0
-    )
-  `);
-
-  // Create the projects table (each project belongs to a user).
-  db.run(`
-    CREATE TABLE IF NOT EXISTS projects (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      user_id INTEGER,
-      FOREIGN KEY(user_id) REFERENCES users(id)
-    )
-  `);
-});
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    premium BOOLEAN DEFAULT 0
+  );
+`).run();
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    user_id INTEGER,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`).run();
 
 function isAuthenticated(req, res, next) {
   if (req.session && req.session.user) {

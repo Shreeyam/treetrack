@@ -31,6 +31,7 @@ const PROJECT_QUERY =
   'SELECT 1 FROM projects WHERE user_id = ? AND id = ?';
 
 app.ws('/collaboration/:id', (ws, req) => {
+  console.log('New WebSocket connection');
   // Parse the session first
   sessionParser(req, {}, (err) => {
     const user = req.session?.user;
@@ -39,16 +40,12 @@ app.ws('/collaboration/:id', (ws, req) => {
     if (err || !user) {
       console.error('Unauthenticated WS connection:', err);
       return ws.close();
-    }
+    }    const projectId = req.params.id;
 
-    const projectId = req.params.id;
-
-    // Check that this user actually owns / can access the project
-    db.get(PROJECT_QUERY, [user.id, projectId], (dbErr, row) => {
-      if (dbErr) {
-        console.error('DB error during authorization:', dbErr);
-        return ws.close();
-      }
+    try {
+      // Check that this user actually owns / can access the project
+      const row = db.prepare(PROJECT_QUERY).get(user.id, projectId);
+      
       if (!row) {
         console.warn(
           `User ${user.id} is not authorized for project ${projectId}`
@@ -61,7 +58,10 @@ app.ws('/collaboration/:id', (ws, req) => {
         `User ${user.id} authenticated for project ${projectId}, opening WS`
       );
       collaborationServer.handleConnection(ws, req, { user });
-    });
+    } catch (dbErr) {
+      console.error('DB error during authorization:', dbErr);
+      return ws.close();
+    }
   });
 });
 

@@ -56,7 +56,7 @@ const TaskContextMenu = memo(({
                         onClose();
                     }}
                 >
-                    {node.data.completed ? <X className="text-destructive" size={24} /> : <Check className="text-green-600" size={16} />}
+                    {node.data.completed ? <X className="text-destructive" size={20} /> : <Check className="text-green-600" size={20} />}
                     <span>{node.data.completed ? 'Mark Incomplete' : 'Mark Completed'}</span>
                 </li>
                 <li
@@ -89,9 +89,9 @@ const TaskContextMenu = memo(({
                     <Network size={16} />
                     <span>Delete Subtree</span>
                 </li>
-                {/* Modified color selection list item */}
+                {/* Modified color selection list item with evenly spaced elements */}
                 <li className="p-2">
-                    <div className="flex space-x-1 mb-2 items-center"> {/* Added items-center for vertical alignment */}
+                    <div className="flex justify-between items-center mb-2"> {/* Changed space-x-1 to justify-between */}
                         {/* Removed orange (#fce5cd), kept red, yellow, green, blue */}
                         {['#ffcccc', '#fff2cc', '#d9ead3', '#d2e1f3'].map((color) => (
                             <div
@@ -100,7 +100,6 @@ const TaskContextMenu = memo(({
                                     onUpdateColor(node, color);
                                     onClose();
                                 }}
-                                // Removed w-full, added fixed size w-6 h-6
                                 className="w-6 h-6 rounded cursor-pointer border"
                                 style={{ backgroundColor: color }}
                                 title={color}
@@ -109,9 +108,8 @@ const TaskContextMenu = memo(({
                         {/* Color Picker Button */}
                         <Button
                             variant="outline"
-                            size="icon" // Use icon size for square button
-                            // Removed w-full, added fixed size w-6 h-6 to match color squares
-                            className="w-6 h-6 rounded cursor-pointer border flex items-center justify-center"
+                            size="icon"
+                            className="w-6 h-6 rounded cursor-pointer border flex items-center justify-center p-0" /* Added p-0 to remove padding */
                             onClick={handleColorPickerClick}
                             title="Choose color"
                         >
@@ -122,12 +120,12 @@ const TaskContextMenu = memo(({
                             type="color"
                             ref={colorInputRef}
                             onChange={handleColorChange}
-                            style={{ visibility: 'hidden', position: 'absolute', width: 0, height: 0 }} // Keep it hidden
+                            style={{ visibility: 'hidden', position: 'absolute', width: 0, height: 0 }}
                         />
                     </div>
                     {/* Reset Color Button */}
                     <Button size="sm" className="w-full" variant="outline" onClick={() => {
-                        onUpdateColor(node, '#FFFFFF'); // Assuming #FFFFFF is the reset/default color
+                        onUpdateColor(node, '#FFFFFF');
                         onClose();
                     }}>
                         <DropletOff size={16} className="mr-1" />

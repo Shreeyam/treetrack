@@ -144,4 +144,23 @@
             cursor: default;
         }
     }
+
+    @keyframes fade {
+
+        0%,
+        25%,
+        100% {
+            opacity: 0;
+        }
+        
+
+        50%,
+        75% {
+            opacity: 1;
+        }
+    }
+
+    .animate-fade {
+        animation: fade 4s ease-in-out infinite;
+    }
 }

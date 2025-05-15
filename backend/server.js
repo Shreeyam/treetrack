@@ -1,23 +1,18 @@
 // server.js
 import express from 'express';
-import Database from 'better-sqlite3';
-import BetterSqlite3Store from 'better-sqlite3-session-store';
 import cors from 'cors';
-import session from 'express-session';
-import bcrypt from 'bcrypt';
-import rateLimit from 'express-rate-limit';
-import crypto from 'crypto';
 import OpenAI from 'openai';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import 'dotenv/config';
+import { db } from './db.js'; 
+import { toNodeHandler, fromNodeHeaders  } from "better-auth/node";
+import { auth } from "./auth.js";
 
 const openai = new OpenAI({
   apiKey: process.env.GEMINI_API_KEY,
   baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
 });
-
-const SqliteStore = BetterSqlite3Store(session);
 
 const app = express();
 
@@ -25,38 +20,13 @@ app.use(cors({
   origin: true,
   credentials: true
 }));
+
+app.all("/api/auth/*", toNodeHandler(auth)); 
+
 app.use(express.json());
 
 app.set('trust proxy', 1);
 
-const db = new Database('./todos.db');
-db.pragma('foreign_keys = ON');
-
-
-// Configure sessions with a SQLite store.
-const sessionDb = new Database('sessions.db');
-const sessionParser = session({
-  store: new SqliteStore({ client: sessionDb }),
-  secret: crypto.randomBytes(64).toString('hex'),
-  resave: false,
-  saveUninitialized: false,
-  cookie: { 
-    maxAge: 7 * 24 * 60 * 60 * 1000, 
-    secure: process.env.NODE_ENV === 'production', 
-    domain: process.env.NODE_ENV === 'production' ? 'treetrack.xyz' : undefined
-  } // 7 days persistence
-})
-app.use(sessionParser);
-
-db.prepare(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    premium BOOLEAN DEFAULT 0
-  );
-`).run();
 db.prepare(`
   CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,6 +36,7 @@ db.prepare(`
   );
 `).run();
 
+// TODO: Change these to betterauth versions
 function isAuthenticated(req, res, next) {
   if (req.session && req.session.user) {
     return next();
@@ -80,101 +51,10 @@ function isPremium(req, res, next) {
   return res.status(403).json({ error: "Premium access required" });
 }
 
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 55,
-  message: "Too many login attempts. Please try again later."
-});
-
 // --- AUTH ENDPOINTS ---
 
 
-app.post('/api/register', async (req, res) => { 
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: "Missing username or password" });
-  }
-
-  try {
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const info = db.prepare(
-      "INSERT INTO users (username, password) VALUES (?, ?)"
-    ).run(username, hashedPassword); 
-
-    const newUser = {
-      id: info.lastInsertRowid,
-      username: username,
-      premium: 0 
-    };
-
-    req.session.user = {
-      id: newUser.id,
-      username: newUser.username,
-      premium: Boolean(newUser.premium) 
-    };
-    console.log(`User ${newUser.username} registered. Session user set:`, req.session.user);
-
-    res.json({
-      id: newUser.id,
-      username: newUser.username,
-      premium: Boolean(newUser.premium)
-    });
-
-  } catch (error) {
-    console.error("Registration error:", error);
-    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-      res.status(400).json({ error: error.code });
-    } else {
-      res.status(500).json({ error: error.code });
-    }
-  }
-});
-
-app.post('/api/login', loginLimiter, async (req, res) => { 
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: "Missing username or password" });
-  }
-
-  try {
-    const user = db.prepare("SELECT id, username, password, premium FROM users WHERE username = ?").get(username);
-
-    if (!user) {
-      return res.status(400).json({ error: "Invalid credentials" });
-    }
-
-    const match = await bcrypt.compare(password, user.password);
-
-    if (match) {
-      req.session.user = {
-        id: user.id,
-        username: user.username,
-        premium: Boolean(user.premium)
-      };
-
-      res.json({
-        id: user.id,
-        username: user.username,
-        premium: Boolean(user.premium)
-      });
-    } else {
-      res.status(400).json({ error: "Invalid credentials" });
-    }
-
-  } catch (error) {
-    console.error("Login error:", error);
-    res.status(500).json({ error: "Server error during login process" });
-  }
-});
-
-app.post('/api/logout', (req, res) => {
-  req.session.destroy((err) => {
-    if (err) return res.status(500).json({ error: "Could not log out" });
-    res.json({ message: "Logged out" });
-  });
-});
-
+// TODO: Migrate this to better auth
 app.get('/api/me', (req, res) => {
   if (req.session && req.session.user) {
     res.json({ user: req.session.user });
@@ -183,12 +63,31 @@ app.get('/api/me', (req, res) => {
   }
 });
 
+// --- STRIPE ENDPOINTS (Authenticated) ---
+// TODO: Add authentication
+app.post('/create-checkout-session', async (req, res) => {
+  const session = await stripe.checkout.sessions.create({
+    line_items: [
+      {
+        price: 'price',
+        quantity: 1,
+      },
+    ],
+    mode: 'payment',
+    success_url: `${process.env.DOMAIN}/subscribe?success=true`,
+    cancel_url: `${process.env.DOMAIN}/subscribe?canceled=true`,
+    automatic_tax: {enabled: true},
+  });
+
+  res.redirect(303, session.url);
+});
+
 // --- PROJECT ENDPOINTS (Authenticated) ---
 
 app.get('/api/projects', isAuthenticated, (req, res) => {
   try {
-    const rows = db.prepare("SELECT * FROM projects WHERE user_id = ?").all(req.session.user.id);
-    res.json({ projects: rows });
+    const rDows = db.prepare("SELECT * FROM projects WHERE user_id = ?").all(req.session.user.id);
+    res.json({ projects: rows });D
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }

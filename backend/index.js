@@ -1,6 +1,7 @@
 // index.js -----------------------------------------------------------
 import http from 'http';
 import expressWs from 'express-ws';
+import { WebSocketServer } from 'ws';
 import { Hocuspocus } from "@hocuspocus/server";
 import { SQLite } from '@hocuspocus/extension-sqlite';
 import * as Y from "yjs";
@@ -8,8 +9,8 @@ import * as Y from "yjs";
 import { app, sessionParser, db } from './server.js';
 
 const server = http.createServer(app);
-expressWs(app, server);
-
+//expressWs(app, server);
+const wss = new WebSocketServer({ noServer: true });
 
 const collaborationServer = new Hocuspocus({
   // piggy‑back, no own listener
@@ -30,41 +31,44 @@ const collaborationServer = new Hocuspocus({
 const PROJECT_QUERY =
   'SELECT 1 FROM projects WHERE user_id = ? AND id = ?';
 
-app.ws('/collaboration/:id', (ws, req) => {
-  console.log('New WebSocket connection');
-  // Parse the session first
+server.on('upgrade', (req, socket, head) => {
+  // Parse the session cookie **before** we decide about the upgrade
   sessionParser(req, {}, (err) => {
     const user = req.session?.user;
-
-    // If session failed or no user, bail out
     if (err || !user) {
-      console.error('Unauthenticated WS connection:', err);
-      throw new Error('Not authenticated');
+      // Log unauthorized access attempt
+      console.log('Unauthorized access attempt:', {
+        error: err,
+        user: user,
+        url: req.url,
+      });
 
+      // 401 – no valid session
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      return socket.destroy();                 // handshake rejected
     }
-    const projectId = req.params.id;
 
-    try {
-      // Check that this user actually owns / can access the project
-      const row = db.prepare(PROJECT_QUERY).get(user.id, projectId);
+    // Path looks like /collaboration/<projectId>
+    const [, , projectId] = req.url.split('/');
 
-      if (!row) {
-        console.warn(
-          `User ${user.id} is not authorized for project ${projectId}`
-        );
-        throw new Error('Not authenticated');
-      }
+    const row = db.prepare(PROJECT_QUERY).get(user.id, projectId);
+    if (!row) {
+      // Log forbidden access attempt
+      console.log('Forbidden access attempt:', {
+        userId: user.id,
+        projectId: projectId,
+        url: req.url,
+      });
 
-      // All good — hand off to Hocuspocus
-      console.log(
-        `User ${user.id} authenticated for project ${projectId}, opening WS`
-      );
+      // 403 – user has no access to this project
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      return socket.destroy();
+    }
+
+    // All good – complete the upgrade and hand over to Hocuspocus
+    wss.handleUpgrade(req, socket, head, (ws) => {
       collaborationServer.handleConnection(ws, req, { user });
-    } catch (dbErr) {
-      console.error('DB error during authorization:', dbErr);
-
-      throw new Error('Not authenticated');
-    }
+    });
   });
 });
 

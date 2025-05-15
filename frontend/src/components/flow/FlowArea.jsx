@@ -25,9 +25,11 @@ const FlowArea = memo(({
     onSelectionChange,
     contextMenu,
     onToggleCompleted,
+    onSetCompleted,
     onEditNode,
     onDeleteNode,
     onDeleteSubtree,
+    onDeleteSubtrees,
     onUpdateNodeColor,
     onCloseContextMenu,
     minimapOn,
@@ -176,6 +178,7 @@ const FlowArea = memo(({
                 onConnect={onConnect}
                 onNodeClick={onNodeClick}
                 onNodeContextMenu={handleNodeContextMenu}
+                onSelectionContextMenu={handleNodeContextMenu}
                 onEdgeContextMenu={handleEdgeContextMenu}
                 onNodeDrag={handleNodeDrag}          // ← live moves
                 onNodeDragStop={handleNodeDragStop}  // ← final commit
@@ -214,10 +217,15 @@ const FlowArea = memo(({
                 x={contextMenu.x}
                 y={contextMenu.y}
                 node={contextMenu.node}
+                selectedNodes={Array.isArray(contextMenu.selectedNodes) && Array.isArray(contextMenu.selectedNodes[0])
+                  ? contextMenu.selectedNodes.flat()
+                  : contextMenu.selectedNodes}
                 onToggleComplete={onToggleCompleted}
+                onSetCompleted={onSetCompleted}
                 onEdit={onEditNode}
                 onDelete={onDeleteNode}
                 onDeleteSubtree={onDeleteSubtree}
+                onDeleteSubtrees={onDeleteSubtrees}
                 onUpdateColor={onUpdateNodeColor}
                 onClose={onCloseContextMenu}
             />

@@ -7,7 +7,8 @@ import {
     DropletOff,
     X,
     Check,
-    Palette // Import Palette icon
+    Palette, // Import Palette icon
+    Layers // Import Layers icon for multi-selection indicator
 } from 'lucide-react';
 
 const TaskContextMenu = memo(({
@@ -15,16 +16,36 @@ const TaskContextMenu = memo(({
     x,
     y,
     node,
+    selectedNodes, // Add selectedNodes prop
     onToggleComplete,
     onEdit,
     onDelete,
     onDeleteSubtree,
+    onDeleteSubtrees, // Add onDeleteSubtrees prop
     onUpdateColor,
+    onSetCompleted,
     onClose
 }) => {
     const colorInputRef = useRef(null); // Add ref for color input
-
+    
+    // Calculate number of selected nodes (including clicked node)
+    const selectedNodesCount = selectedNodes?.length || 0;
+    const isMultiSelection = selectedNodesCount > 1;
+    console.log('Selected nodes:', selectedNodes);
+    console.log('ismultiSelection:', isMultiSelection);
     if (!visible) return null;
+
+    // Determine completion toggle behavior: use single node state if available, otherwise decide based on multi-selection
+    const anyIncomplete = selectedNodes?.some(n => n.data?.completed !== true);
+    const allComplete   = selectedNodes?.every(n => n.data?.completed === true);
+    const completedSingle = node?.data?.completed;
+    const useSingle = typeof completedSingle === 'boolean';
+    const toggleLabel = useSingle
+        ? (completedSingle ? 'Mark Incomplete' : 'Mark Complete')
+        : (anyIncomplete ? 'Mark Complete' : 'Mark Incomplete');
+    const ToggleIcon = useSingle
+        ? (completedSingle ? <X className="text-destructive" size={16} /> : <Check className="text-green-600" size={16} />)
+        : (anyIncomplete ? <Check className="text-green-600" size={16} /> : <X className="text-destructive" size={16} />);
 
     // Handler to trigger click on hidden color input
     const handleColorPickerClick = () => {
@@ -33,7 +54,19 @@ const TaskContextMenu = memo(({
 
     // Handler for when a color is selected from the picker
     const handleColorChange = (event) => {
-        onUpdateColor(node, event.target.value);
+        const newColor = event.target.value;
+        if (isMultiSelection) {
+            // Only update if color is different
+            selectedNodes.forEach(n => {
+                if (n.data?.color !== newColor) {
+                    onUpdateColor(n, newColor);
+                }
+            });
+        } else {
+            if (node.data?.color !== newColor) {
+                onUpdateColor(node, newColor);
+            }
+        }
         onClose();
     };
 
@@ -49,45 +82,73 @@ const TaskContextMenu = memo(({
             onClick={(e) => e.stopPropagation()}
         >
             <ul className="divide-y">
+                {isMultiSelection && (
+                    <li className="px-3 py-0.5 text-sm font-medium italic flex items-center justify-center text-gray-400">
+                        <span>{selectedNodesCount} tasks selected</span>
+                    </li>
+                )}
                 <li
                     className="p-2 cursor-pointer hover:bg-gray-100 flex items-center space-x-2"
                     onClick={() => {
-                        onToggleComplete(node);
+                        const targetCompleted = useSingle
+                            ? !completedSingle
+                            : anyIncomplete;
+                        if (isMultiSelection) {
+                            onSetCompleted(selectedNodes, targetCompleted);
+                        } else {
+                            onToggleComplete(node);
+                        }
                         onClose();
                     }}
                 >
-                    {node.data.completed ? <X className="text-destructive" size={20} /> : <Check className="text-green-600" size={20} />}
-                    <span>{node.data.completed ? 'Mark Incomplete' : 'Mark Completed'}</span>
+                    {ToggleIcon}
+                    <span>{toggleLabel}</span>
                 </li>
-                <li
-                    className="p-2 cursor-pointer hover:bg-gray-100 flex items-center space-x-2"
-                    onClick={() => {
-                        onEdit(node);
-                        onClose();
-                    }}
-                >
-                    <Pencil size={16} />
-                    <span>Edit</span>
-                </li>
+                {!isMultiSelection && (
+                    <li
+                        className="p-2 cursor-pointer hover:bg-gray-100 flex items-center space-x-2"
+                        onClick={() => {
+                            onEdit(node);
+                            onClose();
+                        }}
+                    >
+                        <Pencil size={16} />
+                        <span>Edit</span>
+                    </li>
+                )}
                 <li
                     className="p-2 cursor-pointer hover:bg-gray-100 flex items-center space-x-2 text-destructive"
                     onClick={() => {
-                        onDelete(node);
+                        if (isMultiSelection) {
+                            // Apply to all selected nodes
+                            selectedNodes.forEach(n => {
+                                onDelete(n);
+                            });
+                        } else {
+                            // Single node case
+                            onDelete(node);
+                        }
                         onClose();
                     }}
                 >
                     <Trash size={16} />
-                    <span>Delete</span>
+                    <span>Delete{isMultiSelection ? ' Selected' : ''}</span>
                 </li>
                 <li
                     className="p-2 cursor-pointer hover:bg-gray-100 flex items-center space-x-2 text-destructive"
                     onClick={() => {
-                        onDeleteSubtree(node);
+                        if (isMultiSelection) {
+                            // Delete subtrees for all selected nodes
+                            onDeleteSubtrees(selectedNodes);
+                        } else {
+                            // Single node case
+                            onDeleteSubtree(node);
+                        }
                         onClose();
                     }}
                 >
                     <Network size={16} />
-                    <span>Delete Subtree</span>
+                    <span>Delete Subtree{isMultiSelection ? 's' : ''}</span>
                 </li>
                 {/* Modified color selection list item with evenly spaced elements */}
                 <li className="p-2">
@@ -97,7 +158,18 @@ const TaskContextMenu = memo(({
                             <div
                                 key={color}
                                 onClick={() => {
-                                    onUpdateColor(node, color);
+                                    if (isMultiSelection) {
+                                        // Only update if color is different
+                                        selectedNodes.forEach(n => {
+                                            if (n.data?.color !== color) {
+                                                onUpdateColor(n, color);
+                                            }
+                                        });
+                                    } else {
+                                        if (node.data?.color !== color) {
+                                            onUpdateColor(node, color);
+                                        }
+                                    }
                                     onClose();
                                 }}
                                 className="w-6 h-6 rounded cursor-pointer border"
@@ -125,7 +197,18 @@ const TaskContextMenu = memo(({
                     </div>
                     {/* Reset Color Button */}
                     <Button size="sm" className="w-full" variant="outline" onClick={() => {
-                        onUpdateColor(node, '#FFFFFF');
+                        if (isMultiSelection) {
+                            // Only update if color is different
+                            selectedNodes.forEach(n => {
+                                if (n.data?.color !== '#FFFFFF') {
+                                    onUpdateColor(n, '#FFFFFF');
+                                }
+                            });
+                        } else {
+                            if (node.data?.color !== '#FFFFFF') {
+                                onUpdateColor(node, '#FFFFFF');
+                            }
+                        }
                         onClose();
                     }}>
                         <DropletOff size={16} className="mr-1" />

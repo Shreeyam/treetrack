@@ -45,7 +45,7 @@ function App({ user, setUser }) {
     const [backgroundOn, setBackgroundOn] = useState(() => localStorage.getItem('backgroundOn') !== 'false');
     const [snapToGridOn, setSnapToGridOn] = useState(() => localStorage.getItem('snapToGridOn') !== 'false');
     const [showUpDownstream, setShowUpDownstream] = useState(() => localStorage.getItem('showUpDownstream') !== 'false');
-    const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, node: null });
+    const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, node: null, selectedNodes: [] });
     const [generativeMode, setGenerativeMode] = useState(false);
     const [lastNodePosition, setLastNodePosition] = useState(null); // Initialize to null
     const [cascadeCount, setCascadeCount] = useState(0); // Track cascade steps
@@ -619,7 +619,7 @@ function App({ user, setUser }) {
         (e, node) => {
             // 1) Close any open context menu
             if (contextMenu.visible) {
-                setContextMenu({ visible: false, x: 0, y: 0, node: null });
+                setContextMenu({ visible: false, x: 0, y: 0, node: null, selectedNodes: [] });
             }
 
             if (!e.shiftKey) return;       // normal click – do nothing extra
@@ -654,29 +654,30 @@ function App({ user, setUser }) {
     );
 
 
+    // Toggle completion for a single node (used when single)...
     const handleToggleCompleted = useCallback((node) => {
         if (node.draft) return;
+        const updated = !node.data.completed;
+        setNodes(prev => prev.map(n =>
+            n.id === node.id
+                ? { ...n, data: { ...n.data, completed: updated }, style: createNodeStyle(n.data.color, updated, n.selected, n.draft) }
+                : n
+        ));
+        requestAnimationFrame(() => syncNodeWithYJS(node.id));
+    }, [createNodeStyle, syncNodeWithYJS]);
 
-        const updatedCompleted = !node.data.completed;
-
-        // Update React state
-        setNodes(prev =>
-            prev.map(n =>
-                n.id === node.id
-                    ? {
-                        ...n,
-                        data: { ...n.data, completed: updatedCompleted },
-                        style: createNodeStyle(n.data.color, updatedCompleted),
-                    }
-                    : n
-            )
-        );
-
-        // Schedule YJS update after React state update
-        requestAnimationFrame(() => {
-            syncNodeWithYJS(node.id);
+    // Set completion state for multiple nodes
+    const handleSetCompleted = useCallback((nodesToSet, completed) => {
+        const ids = new Set(nodesToSet.filter(n => !n.draft).map(n => n.id));
+        setNodes(prev => prev.map(n =>
+            ids.has(n.id)
+                ? { ...n, data: { ...n.data, completed }, style: createNodeStyle(n.data.color, completed, n.selected, n.draft) }
+                : n
+        ));
+        nodesToSet.forEach(n => {
+            if (!n.draft) requestAnimationFrame(() => syncNodeWithYJS(n.id));
         });
-    }, [createNodeStyle, syncNodeWithYJS])
+    }, [createNodeStyle, syncNodeWithYJS]);
 
     const handleUpdateNodeColor = useCallback((node, color) => {
         if (node.draft) return;
@@ -731,10 +732,14 @@ function App({ user, setUser }) {
         yjsHandlerRef.current.deleteTask(node.id);
     }, []);
 
+    // Single-node delete subtree (with confirmation)
     const handleDeleteSubtree = useCallback((node) => {
         setNodeToDeleteSubtree(node);
         setDeleteSubtreeDialog(true);
-    }, []); const handleConfirmDeleteSubtree = useCallback(() => {
+    }, []);
+
+    // Confirm delete for single node subtree
+    const handleConfirmDeleteSubtree = useCallback(() => {
         if (!nodeToDeleteSubtree || !yjsHandlerRef.current) return;
 
         const toDelete = new Set();
@@ -745,8 +750,6 @@ function App({ user, setUser }) {
         };
         dfs(nodeToDeleteSubtree.id);
 
-        // Delete tasks from Yjs document - this will trigger the YJS observer
-        // which will update the React state automatically
         toDelete.forEach(nodeId => {
             yjsHandlerRef.current.deleteTask(nodeId);
         });
@@ -755,11 +758,24 @@ function App({ user, setUser }) {
         setNodeToDeleteSubtree(null);
     }, [nodeToDeleteSubtree, edges]);
 
+    // Cancel delete subtree dialog
     const handleCancelDeleteSubtree = useCallback(() => {
         setDeleteSubtreeDialog(false);
         setNodeToDeleteSubtree(null);
     }, []);
 
+    // Delete multiple selected subtrees without confirmation
+    const handleDeleteSubtrees = useCallback((nodes) => {
+        if (!yjsHandlerRef.current) return;
+        const toDelete = new Set();
+        const dfs = (nodeId) => {
+            if (toDelete.has(nodeId)) return;
+            toDelete.add(nodeId);
+            edges.filter(e => e.source === nodeId).forEach(e => dfs(e.target));
+        };
+        nodes.forEach(n => dfs(n.id));
+        toDelete.forEach(nodeId => yjsHandlerRef.current.deleteTask(nodeId));
+    }, [edges]);
 
     const handleGenerativeEdit = useCallback(async (projectData) => {
         const { tasks: aiTasks, dependencies: aiDeps } = projectData;
@@ -1033,16 +1049,33 @@ function App({ user, setUser }) {
         const bounds = reactFlowWrapper.current.getBoundingClientRect();
         const x = event.clientX - bounds.left;
         const y = event.clientY - bounds.top;
-        setContextMenu({ visible: true, x, y, node });
+        
+        // Check if there are multiple selected nodes
+        const selectedNodes = nodesRef.current.filter(n => n.selected);
+        
+        // If the clicked node is selected and there are other selected nodes,
+        // we're dealing with a multi-selection context menu
+        const isPartOfMultiSelection = node.selected && selectedNodes.length > 1;
+        
+        // For multi-selection, include the selected nodes in the context menu
+        // otherwise, just use the right-clicked node (even if it wasn't previously selected)
+        const nodesToPass = isPartOfMultiSelection ? selectedNodes : [];
+        
+        // If right-clicked node isn't part of selection, make sure we include it
+        if (!isPartOfMultiSelection && !nodesToPass.includes(node)) {
+            nodesToPass.push(node);
+        }
+        
+        setContextMenu({ visible: true, x, y, node, selectedNodes: nodesToPass });
     }, []);
 
     const handlePaneClick = useCallback(() => {
         setLinkHighlight(null);
-        setContextMenu({ visible: false, x: 0, y: 0, node: null });
+        setContextMenu({ visible: false, x: 0, y: 0, node: null, selectedNodes: [] });
     }, []);
 
     const handleCloseContextMenu = useCallback(() => {
-        setContextMenu({ visible: false, x: 0, y: 0, node: null });
+        setContextMenu({ visible: false, x: 0, y: 0, node: null, selectedNodes: [] });
     }, []);
 
     const onFitView = useCallback(() => {
@@ -1134,9 +1167,11 @@ function App({ user, setUser }) {
                     onPaneClick={handlePaneClick}
                     contextMenu={contextMenu}
                     onToggleCompleted={handleToggleCompleted}
+                    onSetCompleted={handleSetCompleted}
                     onEditNode={handleEditNode}
                     onDeleteNode={handleDeleteNode}
                     onDeleteSubtree={handleDeleteSubtree}
+                    onDeleteSubtrees={handleDeleteSubtrees}
                     onUpdateNodeColor={handleUpdateNodeColor}
                     onCloseContextMenu={handleCloseContextMenu}
                     minimapOn={minimapOn}

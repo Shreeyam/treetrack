@@ -98,14 +98,29 @@ export const auth = betterAuth({
   trustedOrigins: [
     "http://localhost:5173",
   ],
+  
   plugins: [
-    {
-      stripe({
-        stripeClient,
-        stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
-        createCustomerOnSignUp: true,
-      })
-    },
-  ],
-
+    stripe({
+      stripeClient,
+      stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+      createCustomerOnSignUp: true,
+      onCustomerCreate: async ({ customer, stripeCustomer, user }, request) => {
+        // Do something with the newly created customer
+        console.log(`Customer ${customer.id} created for user ${user.id}`);
+      },
+      subscription: {
+        enabled: true,
+        plans: [
+          {
+            name: "pro",
+            priceId: "price_1RDJ22IBLqJf1tZvK0DJ57Pa",
+            annualDiscountPriceId: "price_1ROrCJIBLqJf1tZvIJmF4r10",
+            freeTrial: {
+                days: 30,
+            }
+          },
+        ],
+      },
+    })
+  ]
 });

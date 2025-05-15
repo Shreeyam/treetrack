@@ -53,7 +53,6 @@ function isPremium(req, res, next) {
 
 // --- AUTH ENDPOINTS ---
 
-
 // TODO: Migrate this to better auth
 app.get('/api/me', (req, res) => {
   if (req.session && req.session.user) {
@@ -63,31 +62,12 @@ app.get('/api/me', (req, res) => {
   }
 });
 
-// --- STRIPE ENDPOINTS (Authenticated) ---
-// TODO: Add authentication
-app.post('/create-checkout-session', async (req, res) => {
-  const session = await stripe.checkout.sessions.create({
-    line_items: [
-      {
-        price: 'price',
-        quantity: 1,
-      },
-    ],
-    mode: 'payment',
-    success_url: `${process.env.DOMAIN}/subscribe?success=true`,
-    cancel_url: `${process.env.DOMAIN}/subscribe?canceled=true`,
-    automatic_tax: {enabled: true},
-  });
-
-  res.redirect(303, session.url);
-});
-
 // --- PROJECT ENDPOINTS (Authenticated) ---
 
 app.get('/api/projects', isAuthenticated, (req, res) => {
   try {
-    const rDows = db.prepare("SELECT * FROM projects WHERE user_id = ?").all(req.session.user.id);
-    res.json({ projects: rows });D
+    const rows = db.prepare("SELECT * FROM projects WHERE user_id = ?").all(req.session.user.id);
+    res.json({ projects: rows });
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }

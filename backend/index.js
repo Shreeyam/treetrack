@@ -39,18 +39,20 @@ app.ws('/collaboration/:id', (ws, req) => {
     // If session failed or no user, bail out
     if (err || !user) {
       console.error('Unauthenticated WS connection:', err);
-      return ws.close();
-    }    const projectId = req.params.id;
+      throw new Error('Not authenticated');
+
+    }
+    const projectId = req.params.id;
 
     try {
       // Check that this user actually owns / can access the project
       const row = db.prepare(PROJECT_QUERY).get(user.id, projectId);
-      
+
       if (!row) {
         console.warn(
           `User ${user.id} is not authorized for project ${projectId}`
         );
-        return ws.close();
+        throw new Error('Not authenticated');
       }
 
       // All good — hand off to Hocuspocus
@@ -60,7 +62,8 @@ app.ws('/collaboration/:id', (ws, req) => {
       collaborationServer.handleConnection(ws, req, { user });
     } catch (dbErr) {
       console.error('DB error during authorization:', dbErr);
-      return ws.close();
+
+      throw new Error('Not authenticated');
     }
   });
 });

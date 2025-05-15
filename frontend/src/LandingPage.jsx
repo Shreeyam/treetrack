@@ -17,8 +17,9 @@ import "@/globals.css";
 import bgVideoMp4 from "@/assets/background_optimized.mp4";
 import Roadmap from "@/components/landing/Roadmap";
 import FAQ from "@/components/landing/FAQ";
+import Pricing from "@/components/landing/Pricing";
 
-export default function TreetrackLanding() {
+export default function LandingPage() {
     return (
         <AppShell>
             {/* Hero Section */}
@@ -170,6 +171,8 @@ export default function TreetrackLanding() {
 
             <Roadmap />
             <FAQ />
+            <Pricing/>
+
             {/* CTA Section */}
             <section className="w-full py-8 md:py-16 bg-primary text-primary-foreground">
                 <div className="container mx-auto px-4 md:px-6">

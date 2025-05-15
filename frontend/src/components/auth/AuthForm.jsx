@@ -10,16 +10,6 @@ import Loading from "@/components/ui/loading";
 import Logo from "@/components/brand/logo";
 import { Link } from "react-router";
 import { authClient } from "@/lib/auth";
-import { stripeClient } from "@better-auth/stripe/client"
- 
-export const client = createAuthClient({
-    // ... your existing config
-    plugins: [
-        stripeClient({
-            subscription: true //if you want to enable subscription management
-        })
-    ]
-})
 
 const AuthForm = ({ onLogin, isRegister, setIsRegister }) => {
     /* -------- state & helpers (unchanged) -------- */

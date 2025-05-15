@@ -16,6 +16,7 @@ import { nodeStyles } from '@/components/flow/styles';
 import { fetchUser, fetchProjects, createProject, deleteProject } from './api';
 import ChatBot from './components/misc/chatbot';
 import ChecksumIndicator from './components/misc/ChecksumIndicator';
+import HocusStatus from './components/misc/HocusStatus';
 import { createAddNewNode, mapWithChangeDetection } from './utils/nodeFunctions';
 import { useNavigate } from 'react-router';
 import { PromptDialog } from '@/components/ui/prompt-dialog';
@@ -1184,6 +1185,9 @@ function App({ user, setUser }) {
                 currentProject={currentProject}
                 yjsHandler={yjsHandler}
             />
+            
+            {/* Hocuspocus connection status indicator */}
+            <HocusStatus yjsHandler={yjsHandler} />
         </div>
     );
 }

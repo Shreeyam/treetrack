@@ -24,8 +24,7 @@ export const initializeHocusProvider = (projectId, user) => {
     url: getWebSocketUrl(),
     name: `projectdocument.${projectId}`,
     onMessage: ({ event, message }) => {
-      // Actual message handling is done in the HocusStatus component
-      // which listens to provider's 'message' event
+      // Handle incoming messages from the server
     },
   });
 
@@ -53,30 +52,36 @@ export const initializeHocusProvider = (projectId, user) => {
   const tasks = provider.document.getMap("tasks");
   const dependencies = provider.document.getMap("dependencies");
   const undoManager = new Y.UndoManager(
-    [tasks, dependencies],
+    [tasks, dependencies],                       // the shared types
     {
-      // only record changes that you mark with origin "generative"
-      trackedOrigins: new Set(["generative"]),
+      trackedOrigins: new Set([LOCAL_ORIGIN]),   // 👈 per-user history
+      captureTimeout: 500                       // (optional) group keystrokes
     }
   );
+
+
   // Helper functions for working with the Yjs data
 
   // Tasks
   const addTask = (taskData) => {
-    const taskId = taskData.id || uuidv4();      // use supplied id if given
-    const taskMap = new Y.Map();
+    const taskId = taskData.id || uuidv4();
 
-    // Set task properties
-    taskMap.set('title', taskData.title);
-    taskMap.set('posX', taskData.posX || 0);
-    taskMap.set('posY', taskData.posY || 0);
-    taskMap.set('completed', taskData.completed || false);
-    taskMap.set('color', taskData.color || '#ffffff');
-    taskMap.set('locked', taskData.locked || false);
-    taskMap.set('draft', !!taskData.draft);   // keep the flag
+    // wrap creation and insertion in one Yjs transaction
+    provider.document.transact(() => {
+      const taskMap = new Y.Map();
 
-    // Add task to tasks map
-    tasks.set(taskId, taskMap);
+      // Set task properties
+      taskMap.set('title', taskData.title);
+      taskMap.set('posX', taskData.posX || 0);
+      taskMap.set('posY', taskData.posY || 0);
+      taskMap.set('completed', taskData.completed || false);
+      taskMap.set('color', taskData.color || '#ffffff');
+      taskMap.set('locked', taskData.locked || false);
+      taskMap.set('draft', !!taskData.draft);
+
+      // Add task to tasks map
+      tasks.set(taskId, taskMap);
+    }, LOCAL_ORIGIN);
 
     return taskId;
   };
@@ -93,7 +98,7 @@ export const initializeHocusProvider = (projectId, user) => {
           });
         }
       });
-    });
+    }, LOCAL_ORIGIN);
 
     return true;
   };
@@ -102,31 +107,34 @@ export const initializeHocusProvider = (projectId, user) => {
     const taskMap = tasks.get(taskId);
     if (!taskMap) return false;
 
-    // Update only the provided properties
-    Object.entries(taskData).forEach(([key, value]) => {
-      taskMap.set(key, value);
-    });
+    provider.document.transact(() => {
+      // Update only the provided properties
+      Object.entries(taskData).forEach(([key, value]) => {
+        taskMap.set(key, value);
+      });
+    }, LOCAL_ORIGIN);
 
     return true;
   };
 
   const deleteTask = (taskId) => {
-    // Remove task from the tasks map
-    tasks.delete(taskId);
+    provider.document.transact(() => {
+      // Remove task from the tasks map
+      tasks.delete(taskId);
 
-    // Clean up any dependencies involving this task
-    const depsToDelete = [];
-    dependencies.forEach((depMap, depId) => {
-      if (depMap.get('from_task') === taskId || depMap.get('to_task') === taskId) {
-        depsToDelete.push(depId);
-      }
-    });
+      // Clean up any dependencies involving this task
+      const depsToDelete = [];
+      dependencies.forEach((depMap, depId) => {
+        if (depMap.get('from_task') === taskId || depMap.get('to_task') === taskId) {
+          depsToDelete.push(depId);
+        }
+      });
 
-    // Delete found dependencies
-    depsToDelete.forEach(depId => {
-      dependencies.delete(depId);
-    });
-
+      // Delete found dependencies
+      depsToDelete.forEach(depId => {
+        dependencies.delete(depId);
+      });
+    }, LOCAL_ORIGIN);
 
     return true;
   };
@@ -134,18 +142,20 @@ export const initializeHocusProvider = (projectId, user) => {
   // Dependencies
   const addDependency = (fromTaskId, toTaskId) => {
     const depId = uuidv4();
-    const depMap = new Y.Map();
-
-    depMap.set('from_task', fromTaskId);
-    depMap.set('to_task', toTaskId);
-
-    dependencies.set(depId, depMap);
+    provider.document.transact(() => {
+      const depMap = new Y.Map();
+      depMap.set('from_task', fromTaskId);
+      depMap.set('to_task', toTaskId);
+      dependencies.set(depId, depMap);
+    }, LOCAL_ORIGIN);
 
     return depId;
   };
 
   const deleteDependency = (depId) => {
-    dependencies.delete(depId);
+    provider.document.transact(() => {
+      dependencies.delete(depId);
+    }, LOCAL_ORIGIN);
 
     return true;
   };
@@ -206,3 +216,5 @@ export const initializeHocusProvider = (projectId, user) => {
     getReactFlowData
   };
 };
+
+export const LOCAL_ORIGIN = Symbol('local-user'); // Used to identify local changes in the undo manager

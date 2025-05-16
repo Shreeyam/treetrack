@@ -6,7 +6,7 @@ import { useNodesState, useEdgesState } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import '@/globals.css';
 import "@/App.css";
-import { initializeHocusProvider } from "@/hocus.js";
+import { initializeHocusProvider, LOCAL_ORIGIN } from "@/hocus.js";
 import * as dagre from 'dagre';
 import blendColors from './utils/colors';
 import AuthForm from '@/components/auth/AuthForm';
@@ -831,7 +831,7 @@ function App({ user, setUser }) {
                     newDraftEdgeIds.push(d.id);
                 }
             });
-        }, "generative");
+        }, LOCAL_ORIGIN);
 
         // then mark them as drafts
         setDraftTaskIds(newDraftNodeIds);

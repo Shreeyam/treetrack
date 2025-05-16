@@ -170,6 +170,16 @@ const FlowArea = memo(({
                 });
             }
         }
+        // ----- UNDO / REDO ---------------------------------------------
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+            event.preventDefault();
+            if (event.shiftKey) {
+                yjsHandler.current.undoManager.redo();   // ⌘⇧Z / Ctrl-Y
+            } else {
+                yjsHandler.current.undoManager.undo();   // ⌘Z / Ctrl-Z
+            }
+            return;
+        }
 
         // ----- CUT --------------------------------------------------
         if (["Meta", "Control"].some(k => event.getModifierState(k)) && event.key.toLowerCase() === 'x') {

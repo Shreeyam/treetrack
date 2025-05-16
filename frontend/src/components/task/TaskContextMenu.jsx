@@ -31,8 +31,7 @@ const TaskContextMenu = memo(({
     // Calculate number of selected nodes (including clicked node)
     const selectedNodesCount = selectedNodes?.length || 0;
     const isMultiSelection = selectedNodesCount > 1;
-    console.log('Selected nodes:', selectedNodes);
-    console.log('ismultiSelection:', isMultiSelection);
+
     if (!visible) return null;
 
     // Determine completion toggle behavior: use single node state if available, otherwise decide based on multi-selection

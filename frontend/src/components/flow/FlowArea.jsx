@@ -9,7 +9,7 @@ import {
 import TaskContextMenu from '../task/TaskContextMenu';
 import CanvasContextMenu from './CanvasContextMenu';
 import ArrowContextMenu from './ArrowContextMenu';
-import { nodeStyles } from './styles';
+import { v4 as uuidv4 } from 'uuid';
 
 const FlowArea = memo(({
     nodes,
@@ -37,7 +37,11 @@ const FlowArea = memo(({
     snapToGridOn,
     onInit,
     onAddNode,
-    onAutoArrange
+    onAutoArrange,
+    createNodeStyle,
+    yjsHandler,
+    setNodes, // <-- add as prop
+    setEdges  // <-- add as prop
 }) => {
     const [canvasMenu, setCanvasMenu] = useState({ visible: false, x: 0, y: 0 });
     const [arrowMenu, setArrowMenu] = useState({ visible: false, x: 0, y: 0, edge: null });
@@ -52,6 +56,12 @@ const FlowArea = memo(({
         }
     }, [onInit]);
 
+    // --- COPY / PASTE state -----------------------------------------
+    // persists between re-renders but is local to this FlowArea instance
+    const clipboardRef = useRef({ nodes: [], edges: [] });
+    // last mouse position inside the flow (in flow coords)
+    const lastMousePos = useRef({ x: 0, y: 0 });
+
     const handleCloseArrowMenu = useCallback(() => {
         setArrowMenu({ visible: false, x: 0, y: 0, edge: null });
     }, []);
@@ -61,8 +71,8 @@ const FlowArea = memo(({
         onCloseContextMenu();
         handleCloseArrowMenu();
         const bounds = flowRef.current.getBoundingClientRect();
-        setCanvasMenu({ 
-            visible: true, 
+        setCanvasMenu({
+            visible: true,
             x: event.clientX - bounds.left,
             y: event.clientY - bounds.top
         });
@@ -114,7 +124,7 @@ const FlowArea = memo(({
     const handleNodeDragStop = useCallback((event, draggedNode) => {
         // Find all selected nodes including the dragged one
         const selectedNodes = nodes.filter(node => node.selected || node.id === draggedNode.id);
-        
+
         // Call onNodeDragStop for each selected node
         selectedNodes.forEach(node => {
             if (onNodeDragStop) {
@@ -129,6 +139,7 @@ const FlowArea = memo(({
     }, [nodes, onNodeDrag]);
 
     const handleKeyDown = useCallback((event) => {
+
         // Only process if an input field isn't currently focused
         if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
             return;
@@ -159,7 +170,119 @@ const FlowArea = memo(({
                 });
             }
         }
-    }, [edges, nodes, handleDeleteEdge, onDeleteNode]);
+
+        // ----- CUT --------------------------------------------------
+        if (["Meta", "Control"].some(k => event.getModifierState(k)) && event.key.toLowerCase() === 'x') {
+            event.preventDefault();
+            // gather selected nodes & internal edges
+            const selNodes = nodes.filter(n => n.selected && !n.draft);
+            if (selNodes.length) {
+                const selIds = new Set(selNodes.map(n => n.id));
+                const selEdges = edges.filter(e => selIds.has(e.source) && selIds.has(e.target));
+                // copy to clipboard
+                clipboardRef.current = {
+                    nodes: selNodes.map(n => ({ ...n })),
+                    edges: selEdges.map(e => ({ ...e }))
+                };
+                // delete edges first
+                selEdges.forEach(edge => handleDeleteEdge(edge));
+                // then delete nodes
+                selNodes.forEach(node => onDeleteNode?.(node));
+            }
+            return;
+        }
+
+        // ----- COPY -------------------------------------------------
+        if (["Meta", "Control"].some(k => event.getModifierState(k)) && event.key.toLowerCase() === 'c') {
+            const selNodes = nodes.filter((n) => n.selected && !n.draft);
+            if (!selNodes.length) return;
+
+            // collect internal edges (both ends selected)
+            const selIds = new Set(selNodes.map((n) => n.id));
+            const selEdges = edges.filter(
+                (e) => selIds.has(e.source) && selIds.has(e.target)
+            );
+
+            // store a shallow clone so we can mutate positions later
+            clipboardRef.current = {
+                nodes: selNodes.map((n) => ({ ...n })),
+                edges: selEdges.map((e) => ({ ...e })),
+            };
+            return;
+        }
+
+        // ----- PASTE ------------------------------------------------
+        if (["Meta", "Control"].some(k => event.getModifierState(k)) && event.key.toLowerCase() === 'v') {
+            const { nodes: cpNodes, edges: cpEdges } = clipboardRef.current;
+            if (!cpNodes.length) return;
+
+            // 1️⃣ work out the offset so the *centroid* sits under the cursor
+            const minX = Math.min(...cpNodes.map((n) => n.position.x));
+            const minY = Math.min(...cpNodes.map((n) => n.position.y));
+            const centroid = {
+                x: minX + (Math.max(...cpNodes.map((n) => n.position.x)) - minX) / 2,
+                y: minY + (Math.max(...cpNodes.map((n) => n.position.y)) - minY) / 2,
+            };
+            const dx = lastMousePos.current.x - centroid.x;
+            const dy = lastMousePos.current.y - centroid.y;
+
+            // 2️⃣ duplicate nodes – new ids, shifted positions, fresh style
+            const idMap = new Map();
+            const newNodes = cpNodes.map((old) => {
+                const id = uuidv4();
+                idMap.set(old.id, id);
+                return {
+                    ...old,
+                    id,
+                    position: {
+                        x: old.position.x + dx,
+                        y: old.position.y + dy,
+                    },
+                    selected: false,
+                    draft: false,
+                    style: createNodeStyle(
+                        old.data.color,
+                        old.data.completed,
+                        false,
+                        false
+                    ),
+                };
+            });
+
+            // 3️⃣ duplicate internal edges with the remapped ids
+            const newEdges = cpEdges.map((old) => ({
+                ...old,
+                id: uuidv4(),
+                source: idMap.get(old.source),
+                target: idMap.get(old.target),
+                selected: false,
+            }));
+
+            // 4️⃣ push to React-Flow state  ⟹ immediate visual feedback
+            setNodes((prev) => [...prev, ...newNodes]);
+            setEdges((prev) => [...prev, ...newEdges]);
+
+            // 5️⃣ persist inside the Yjs doc in ONE transaction
+            if (yjsHandler?.current) {
+                const { addTask, addDependency, provider } = yjsHandler.current;
+                provider.document.transact(() => {
+                    newNodes.forEach((n) =>
+                        addTask({
+                            id: n.id,
+                            title: n.data.label,
+                            posX: n.position.x,
+                            posY: n.position.y,
+                            completed: n.data.completed,
+                            color: n.data.color,
+                        })
+                    );
+                    newEdges.forEach((e) => addDependency(e.source, e.target));
+                });
+            }
+            return;
+        }
+    }, [edges, nodes, handleDeleteEdge, onDeleteNode, createNodeStyle, yjsHandler, setNodes, setEdges]);
+
 
     useEffect(() => {
         document.addEventListener('keydown', handleKeyDown);
@@ -169,7 +292,17 @@ const FlowArea = memo(({
     }, [handleKeyDown]);
 
     return (
-        <div className="flex-grow relative" ref={flowRef}>
+        <div className="flex-grow relative"
+            ref={flowRef}
+            onMouseMove={(e) => {
+                if (!reactFlowInstance) return;
+                const bounds = flowRef.current.getBoundingClientRect();
+                lastMousePos.current = reactFlowInstance.screenToFlowPosition({
+                    x: e.clientX - bounds.left,
+                    y: e.clientY - bounds.top,
+                });
+            }}
+        >
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
@@ -218,8 +351,8 @@ const FlowArea = memo(({
                 y={contextMenu.y}
                 node={contextMenu.node}
                 selectedNodes={Array.isArray(contextMenu.selectedNodes) && Array.isArray(contextMenu.selectedNodes[0])
-                  ? contextMenu.selectedNodes.flat()
-                  : contextMenu.selectedNodes}
+                    ? contextMenu.selectedNodes.flat()
+                    : contextMenu.selectedNodes}
                 onToggleComplete={onToggleCompleted}
                 onSetCompleted={onSetCompleted}
                 onEdit={onEditNode}

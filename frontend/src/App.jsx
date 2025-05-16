@@ -1180,6 +1180,10 @@ function App({ user, setUser }) {
                     onInit={setReactFlowInstance}
                     onAddNode={addNewNode}
                     onAutoArrange={handleAutoArrange}
+                    createNodeStyle={createNodeStyle}
+                    yjsHandler={yjsHandlerRef}
+                    setNodes={setNodes} // <-- pass as prop
+                    setEdges={setEdges} // <-- pass as prop
                 />
             </ReactFlowProvider>
             <PromptDialog

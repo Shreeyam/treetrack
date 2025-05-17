@@ -70,7 +70,7 @@ server.on('upgrade', (req, socket, head) => {
     wss.handleUpgrade(req, socket, head, (ws) => {
       // Register connection and manage lifecycle
       collaborationServer.handleConnection(ws, req, { user });
-      registerConnection(projectId, ws);
+      registerConnection(projectId, ws, user);
       ws.on('close', () => unregisterConnection(projectId, ws));
     });
   });

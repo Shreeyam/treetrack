@@ -7,6 +7,7 @@ import { SQLite } from '@hocuspocus/extension-sqlite';
 import * as Y from "yjs";
 
 import { app, sessionParser, db } from './server.js';
+import { registerConnection, unregisterConnection } from './collaborationManager.js';
 
 const server = http.createServer(app);
 //expressWs(app, server);
@@ -67,7 +68,10 @@ server.on('upgrade', (req, socket, head) => {
 
     // All good – complete the upgrade and hand over to Hocuspocus
     wss.handleUpgrade(req, socket, head, (ws) => {
+      // Register connection and manage lifecycle
       collaborationServer.handleConnection(ws, req, { user });
+      registerConnection(projectId, ws);
+      ws.on('close', () => unregisterConnection(projectId, ws));
     });
   });
 });

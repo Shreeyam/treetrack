@@ -11,6 +11,7 @@ import OpenAI from 'openai';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import 'dotenv/config';
+import { closeProjectConnections } from './collaborationManager.js';
 
 const openai = new OpenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -214,6 +215,10 @@ app.delete('/api/projects/:id', isAuthenticated, (req, res) => {
     const info = db
       .prepare("DELETE FROM projects WHERE id = ? AND user_id = ?")
       .run(projectId, req.session.user.id);
+    // If a project was deleted, close its websocket connections
+    if (info.changes > 0) {
+      closeProjectConnections(projectId);
+    }
     res.json({ changes: info.changes });
   } catch (error) {
     res.status(400).json({ error: error.message });

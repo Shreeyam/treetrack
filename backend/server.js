@@ -5,8 +5,8 @@ import OpenAI from 'openai';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import 'dotenv/config';
-import { db } from './db.js'; 
-import { toNodeHandler, fromNodeHeaders  } from "better-auth/node";
+import { db } from './db.js';
+import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
 import { auth } from "./auth.js";
 
 const openai = new OpenAI({
@@ -21,7 +21,7 @@ app.use(cors({
   credentials: true
 }));
 
-app.all("/api/auth/*", toNodeHandler(auth)); 
+app.all("/api/auth/*", toNodeHandler(auth));
 
 app.use(express.json());
 
@@ -32,20 +32,31 @@ db.prepare(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     user_id INTEGER,
-    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    FOREIGN KEY(user_id) REFERENCES user(id) ON DELETE CASCADE
   );
 `).run();
 
-// TODO: Change these to betterauth versions
 function isAuthenticated(req, res, next) {
-  if (req.session && req.session.user) {
-    return next();
-  }
-  return res.status(401).json({ error: "Not authenticated" });
+  const cookie = req.headers.cookie || '';
+  auth.api
+    .getSession({ headers: { cookie } })
+    .then(({ user }) => {
+      console.log('User:', user);
+      if (!user) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+      // Attach user for downstream handlers
+      req.user = user;
+      next();
+    })
+    .catch(err => {
+      console.error('Auth check failed:', err);
+      res.status(500).json({ error: 'Authentication error' });
+    });
 }
 
 function isPremium(req, res, next) {
-  if (req.session && req.session.user && req.session.user.premium) {
+  if (req.session && req.user && req.user.premium) {
     return next();
   }
   return res.status(403).json({ error: "Premium access required" });
@@ -55,8 +66,8 @@ function isPremium(req, res, next) {
 
 // TODO: Migrate this to better auth
 app.get('/api/me', (req, res) => {
-  if (req.session && req.session.user) {
-    res.json({ user: req.session.user });
+  if (req.session && req.user) {
+    res.json({ user: req.user });
   } else {
     res.status(401).json({ error: "Not authenticated" });
   }
@@ -66,7 +77,7 @@ app.get('/api/me', (req, res) => {
 
 app.get('/api/projects', isAuthenticated, (req, res) => {
   try {
-    const rows = db.prepare("SELECT * FROM projects WHERE user_id = ?").all(req.session.user.id);
+    const rows = db.prepare("SELECT * FROM projects WHERE user_id = ?").all(req.user.id);
     res.json({ projects: rows });
   } catch (error) {
     return res.status(400).json({ error: error.message });
@@ -80,7 +91,7 @@ app.post('/api/projects', isAuthenticated, (req, res) => {
       `INSERT INTO projects (name, user_id)
        VALUES (?, ?)`
     );
-    const info = stmt.run(name, req.session.user.id);
+    const info = stmt.run(name, req.user.id);
     res.json({ id: info.lastInsertRowid, name });
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -89,7 +100,7 @@ app.post('/api/projects', isAuthenticated, (req, res) => {
 
 app.delete('/api/projects/:id', isAuthenticated, (req, res) => {
   const projectId = req.params.id;
-  db.run("DELETE FROM projects WHERE id = ? AND user_id = ?", [projectId, req.session.user.id], function (err) {
+  db.run("DELETE FROM projects WHERE id = ? AND user_id = ?", [projectId, req.user.id], function (err) {
     if (err) return res.status(400).json({ error: err.message });
     res.json({ changes: this.changes });
   });
@@ -298,10 +309,10 @@ app.post('/api/generate', isAuthenticated, isPremium, async (req, res) => {
     return res.status(400).json({ error: "Missing topic or project_id" });
   }
   try {
-    const projectData = await generativeEdit(user_input, project_id, req.session.user.id, current_state, chat_history); // Pass chat_history
+    const projectData = await generativeEdit(user_input, project_id, req.user.id, current_state, chat_history); // Pass chat_history
     res.json({ data: projectData });
   } catch (error) {
-    
+
     res.status(500).json({ error: "Failed to generate project structure" });
   }
 });
@@ -314,7 +325,7 @@ app.post('/api/log-error', express.json(), (req, res) => {
 // --- BULK CHANGE ENDPOINT (Authenticated) ---
 app.post('/api/bulk-change', isAuthenticated, (req, res) => {
   const { project_id, tasks, dependencies } = req.body;
-  const userId = req.session.user.id;
+  const userId = req.user.id;
   const idMap = {};      // tempId → realId
   const tasksCreated = [];
   const depsCreated = [];
@@ -404,4 +415,4 @@ app.post('/api/bulk-change', isAuthenticated, (req, res) => {
 });
 
 
-export { app, sessionParser, db };
+export { app, db };

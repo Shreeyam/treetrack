@@ -12,7 +12,7 @@ import AuthForm from '@/components/auth/AuthForm';
 import TopBar from '@/components/navigation/TopBar';
 import FlowArea from '@/components/flow/FlowArea';
 import { nodeStyles } from '@/components/flow/styles';
-import { fetchUser, fetchProjects, createProject, deleteProject } from './api';
+import { fetchProjects, createProject, deleteProject } from './api';
 import ChatBot from './components/misc/chatbot';
 import ChecksumIndicator from './components/misc/ChecksumIndicator';
 import HocusStatus from './components/misc/HocusStatus';
@@ -21,6 +21,8 @@ import { useNavigate } from 'react-router';
 import { PromptDialog } from '@/components/ui/prompt-dialog';
 import throttle from 'lodash.throttle';
 import { v4 as uuidv4 } from 'uuid';
+import { authClient } from "@/lib/auth";
+import Loading from '@/components/ui/Loading';
 
 
 // Memoize imported components
@@ -28,7 +30,7 @@ const MemoAuthForm = React.memo(AuthForm);
 const MemoTopBar = React.memo(TopBar);
 const MemoFlowArea = React.memo(FlowArea);
 
-function App({ user, setUser }) {
+function App({ user, userPending }) {
     // --- Main App States ---
     const [projects, setProjects] = useState([]);
     const [currentProject, setCurrentProject] = useState(''); // Don't load from localStorage until user is authenticated
@@ -68,7 +70,6 @@ function App({ user, setUser }) {
     const currentProjectRef = useRef(currentProject);
     const yjsHandlerRef = useRef(null);
 
-
     const navigate = useNavigate(); // Use useNavigate from react-router
 
     // Memos
@@ -88,6 +89,16 @@ function App({ user, setUser }) {
     useEffect(() => {
         yjsHandlerRef.current = yjsHandler;
     }, [yjsHandler]);
+
+    useEffect(() => {
+        console.log('App mounted');
+        // Check if user is authenticated
+        console.log('User:', user);
+        console.log('Is pending:', userPending);
+        if(!user && !userPending) {
+            navigate('/login');
+        }
+    }, [user, userPending]);
 
     // --- Node Management ---
     const createNodeStyle = useCallback((color, completed, selected, draft) => {
@@ -119,26 +130,6 @@ function App({ user, setUser }) {
 
         return style;
     }, [blendColors, memoBlendColors]);
-
-    // --- Session Management ---
-    useEffect(() => {
-        fetchUser()
-            .then(data => {
-                if (data.user) {
-                    setUser(data.user);
-                }
-                else { navigate('/login'); } // Redirect to login if no user data
-            })
-            .catch(err => {
-                if (err.status === 401) {
-                    setUser(null);
-                    alert('Session expired. Please log in again.');
-                    navigate('/login'); // Redirect to login if not authenticated
-                }
-                console.error(err);
-            }
-            );
-    }, []);
 
     useEffect(() => {
         if (user && user.id) { // Only fetch projects if we have a valid user object
@@ -368,17 +359,13 @@ function App({ user, setUser }) {
         }
     }, [currentProject, user, fetchTasksAndEdges]);
 
-    const handleLogout = useCallback(() => {
+    const handleLogout = useCallback(async () => {
         // Clean up Yjs provider before logout
         if (yjsHandlerRef.current && yjsHandlerRef.current.provider) {
             yjsHandlerRef.current.provider.destroy();
         }
 
-        fetch('/api/logout', { method: 'POST', credentials: 'include' })
-            .then(() => {
-                setUser(null);
-                navigate('/'); // Navigate to homepage after logout
-            });
+        await authClient.signOut();
     }, [navigate]);
 
     // --- View Options Persistence ---
@@ -1084,9 +1071,8 @@ function App({ user, setUser }) {
         [createNodeStyle, setNodes]
     );
 
-
     if (!user) {
-        return <MemoAuthForm onLogin={setUser} />;
+        return <Loading className="flex items-center justify-center h-screen w-screen text-primary" size={40} />;
     }
 
     return (

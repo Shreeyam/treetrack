@@ -10,6 +10,34 @@ import Loading from "@/components/ui/loading";
 import Logo from "@/components/brand/logo";
 import { Link } from "react-router";
 import { authClient } from "@/lib/auth";
+import { ArrowRight } from "lucide-react";
+import { useNavigate } from "react-router";
+
+// Google logo component
+const GoogleLogo = ({ className = "h-4 w-4" }) => (
+    <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 48 48"
+        className={className}
+    >
+        <path
+            fill="#FFC107"
+            d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"
+        />
+        <path
+            fill="#FF3D00"
+            d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"
+        />
+        <path
+            fill="#4CAF50"
+            d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"
+        />
+        <path
+            fill="#1976D2"
+            d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"
+        />
+    </svg>
+);
 
 const AuthForm = ({ onLogin, isRegister, setIsRegister }) => {
     /* -------- state & helpers (unchanged) -------- */
@@ -21,234 +49,247 @@ const AuthForm = ({ onLogin, isRegister, setIsRegister }) => {
     const [lastName, setLastName] = useState("");
     const [loading, setLoading] = useState(false);
 
-    const handleLogin = async () => { /* … same as before … */ };
-    const handleRegister = async () => { /* … same as before … */ };
+    const navigate = useNavigate();
+
+
+    const handleLogin = async () => {
+        const { data, error } = await authClient.signIn.email({
+            email: loginEmail,
+            password: loginPassword,
+        }, {
+            onRequest: (ctx) => {
+                setLoading(true);
+            },
+            onSuccess: (ctx) => {
+                // Crappy hack to wait for session to be set before redirecting
+                setTimeout(() => {
+                    setLoading(false);
+                    navigate("/app");
+                }, 100);
+            },
+            onError: (ctx) => {
+                setLoading(false);
+                alert(ctx.error.message);
+            },
+        });
+    };
+    const handleRegister = async () => {
+        const { data, error } = await authClient.signUp.email({
+            email: registerEmail,
+            password: registerPassword,
+            name: firstName,
+            lastName: lastName,
+            callbackURL: "/app?ref=register"
+        }, {
+            onRequest: (ctx) => {
+                setLoading(true);
+            },
+            onSuccess: (ctx) => {
+                setLoading(false);
+                navigate("/app?ref=register");
+            },
+            onError: (ctx) => {
+                setLoading(false);
+                alert(ctx.error.message);
+            },
+        });
+    };
 
     /* ------------------------- UI ------------------------- */
     return (
-        <div className="flex min-h-screen bg-white">
-            {/* LEFT – form */}
-            <section className="flex w-full flex-col items-center justify-center px-6 py-10 md:w-1/2">
-                <div className="w-full max-w-md space-y-8 transition-all duration-300">
-                    <Logo className="h-10 w-auto animate-fade-in" />
+        <div className="min-h-screen bg-white p-4 flex items-center justify-center">
+            <Card className="w-full max-w-md overflow-hidden shadow-lg py-0">
+                <div className="flex flex-col md:flex-row">
+                    {/* LEFT – form */}
+                    <section className="w-full p-6">
+                        <div className="space-y-4">
+                            <Logo className="h-10 w-auto" />
 
-                    <header className="animate-slide-up">
-                        <h1 className="text-3xl font-extrabold tracking-tight text-brand-700">
-                            Welcome to <span className="text-gradient-brand">Treetrack</span>
-                        </h1>
-                        <p className="mt-2 text-sm leading-relaxed text-neutral-600">
-                            {isRegister
-                                ? "Create your account to start mapping tasks and unlock powerful project management."
-                                : "Log in to your account and continue building remarkable projects."}
-                        </p>
-                    </header>
+                            <header>
+                                <h1 className="text-3xl font-extrabold tracking-tight text-brand-700">
+                                    Welcome to Treetrack
+                                </h1>
+                                <p className="mt-2 text-sm text-neutral-600">
+                                    {isRegister
+                                        ? "Create your account to start mapping tasks."
+                                        : "Log in to your account to track your tasks."}
+                                </p>
+                            </header>
 
-                    {/* SOCIAL */}
-                    <div className="space-y-3 animate-fade-in">
-                        <Button
-                            variant="outline"
-                            className="flex w-full items-center justify-center gap-3 border-neutral-200 bg-white py-6 shadow-sm transition-all hover:bg-neutral-50 hover:shadow-md"
-                        >
-                            <span>Continue with Google</span>
-                        </Button>
-                        <Button
-                            variant="outline"
-                            className="flex w-full items-center justify-center gap-3 border-neutral-200 bg-white py-6 shadow-sm transition-all hover:bg-neutral-50 hover:shadow-md"
-                        >
-                            <span>Continue with Facebook</span>
-                        </Button>
-                    </div>
+                            <div>
+                                <div className="space-y-2">
+                                    {isRegister ? (
+                                        <>
+                                            {/* NAME FIELDS */}
+                                            <div className="flex flex-col gap-4 sm:flex-row">
+                                                <div className="grid w-full items-center gap-1.5">
+                                                    <Label htmlFor="firstName" className="font-medium">First Name</Label>
+                                                    <Input
+                                                        id="firstName"
+                                                        value={firstName}
+                                                        onChange={(e) => setFirstName(e.target.value)}
+                                                    />
+                                                </div>
+                                                <div className="grid w-full items-center gap-1.5">
+                                                    <Label htmlFor="lastName" className="font-medium">Last Name (optional)</Label>
+                                                    <Input
+                                                        id="lastName"
+                                                        value={lastName}
+                                                        onChange={(e) => setLastName(e.target.value)}
+                                                    />
+                                                </div>
+                                            </div>
 
-                    <div className="flex items-center gap-3">
-                        <Separator className="flex-1 bg-neutral-200" />
-                        <span className="text-xs font-medium uppercase tracking-widest text-neutral-400">
-                            or
-                        </span>
-                        <Separator className="flex-1 bg-neutral-200" />
-                    </div>
+                                            {/* EMAIL / PASSWORD */}
+                                            <div className="grid w-full items-center gap-1.5">
+                                                <Label htmlFor="registerEmail" className="font-medium">Email</Label>
+                                                <Input
+                                                    id="registerEmail"
+                                                    type="email"
+                                                    value={registerEmail}
+                                                    onChange={(e) => setRegisterEmail(e.target.value)}
+                                                    placeholder="you@example.com"
+                                                />
+                                            </div>
+                                            <div className="grid w-full items-center gap-1.5">
+                                                <Label htmlFor="registerPassword" className="font-medium">Password</Label>
+                                                <Input
+                                                    id="registerPassword"
+                                                    type="password"
+                                                    value={registerPassword}
+                                                    onChange={(e) => setRegisterPassword(e.target.value)}
+                                                    onKeyDown={(e) => e.key === "Enter" && handleRegister()}
+                                                    placeholder="••••••••"
+                                                />
+                                            </div>
 
-                    {/* CARD */}
-                    <Card className="border-neutral-200 bg-white shadow-lg transition-all hover:shadow-xl">
-                        <CardHeader>
-                            <h2 className="text-xl font-bold text-brand-700">
-                                {isRegister ? "Create Account" : "Sign In"}
-                            </h2>
-                        </CardHeader>
+                                            <Button
+                                                onClick={handleRegister}
+                                                className="w-full"
+                                            >
+                                                {loading ? <Loading /> : "Create account"}
+                                            </Button>
 
-                        <CardContent className="space-y-5">
-                            {isRegister ? (
-                                <>
-                                    {/* NAME FIELDS */}
-                                    <div className="flex flex-col gap-4 sm:flex-row">
-                                        <div className="w-full">
-                                            <Label htmlFor="firstName" className="font-medium">First Name</Label>
-                                            <Input
-                                                id="firstName"
-                                                value={firstName}
-                                                onChange={(e) => setFirstName(e.target.value)}
-                                            />
-                                        </div>
-                                        <div className="w-full">
-                                            <Label htmlFor="lastName" className="font-medium">Last Name</Label>
-                                            <Input
-                                                id="lastName"
-                                                value={lastName}
-                                                onChange={(e) => setLastName(e.target.value)}
-                                            />
-                                        </div>
-                                    </div>
+                                            <div className="flex items-center gap-3">
+                                                <Separator className="flex-1" />
+                                                <span className="text-xs font-medium text-neutral-400">
+                                                    or
+                                                </span>
+                                                <Separator className="flex-1" />
+                                            </div>
 
-                                    {/* EMAIL / PASSWORD */}
-                                    <div>
-                                        <Label htmlFor="registerEmail" className="font-medium">Email</Label>
+                                            <Button
+                                                variant="outline"
+                                                className="flex w-full items-center justify-center gap-3"
+                                            >
+                                                <GoogleLogo className="h-9 w-9" />
+                                                <span>Continue with Google</span>
+                                            </Button>
 
-                                        <Input
-                                            id="registerEmail"
-                                            type="email"
-                                            value={registerEmail}
-                                            onChange={(e) => setRegisterEmail(e.target.value)}
-                                            placeholder="you@example.com"
-                                        />
-                                    </div>
-                                    <div>
-                                        <Label htmlFor="registerPassword" className="font-medium">Password</Label>
+                                            <Button
+                                                variant="outline"
+                                                className="w-full"
+                                            >
+                                                Try without an account <ArrowRight className="h-4 w-4" />
+                                            </Button>
 
-                                        <Input
-                                            id="registerPassword"
-                                            type="password"
-                                            value={registerPassword}
-                                            onChange={(e) => setRegisterPassword(e.target.value)}
-                                            onKeyDown={(e) => e.key === "Enter" && handleRegister()}
-                                            placeholder="••••••••"
-                                        />
-                                    </div>
+                                            <p className="text-center text-sm text-neutral-600">
+                                                Already joined?&nbsp;
+                                                <Button
+                                                    variant="link"
+                                                    onClick={() => setIsRegister(false)}
+                                                >
+                                                    <Link to="/login">Log in here</Link>
+                                                </Button>
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="grid w-full items-center gap-1.5">
 
-                                    <Button
-                                        onClick={handleRegister}
-                                        className="w-full"
-                                    >
-                                        {loading ? <Loading /> : "Create account"}
-                                    </Button>
+                                                <Label htmlFor="loginEmail" className="font-medium">Email or username</Label>
+                                                <Input
+                                                    id="loginEmail"
+                                                    value={loginEmail}
+                                                    onChange={(e) => setLoginEmail(e.target.value)}
+                                                    placeholder="you@example.com"
+                                                />
+                                            </div>
+                                            <div className="grid w-full items-center gap-1.5">
 
-                                    <Button variant="outline" className="w-full">
-                                        Try without an account
-                                    </Button>
+                                                <Label htmlFor="loginPassword" className="font-medium">Password</Label>
+                                                <Input
+                                                    id="loginPassword"
+                                                    type="password"
+                                                    value={loginPassword}
+                                                    onChange={(e) => setLoginPassword(e.target.value)}
+                                                    onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                                                    placeholder="••••••••"
+                                                />
+                                            </div>
 
-                                    <p className="text-center text-sm text-neutral-600">
-                                        Already joined?&nbsp;
-                                        <Button
-                                            variant="link"
-                                            onClick={() => setIsRegister(false)}
-                                            className=""
-                                        >
-                                            Log in here
-                                        </Button>
-                                    </p>
-                                </>
-                            ) : (
-                                <>
-                                    <div>
-                                        <Label htmlFor="loginEmail" className="font-medium">Email</Label>
-                                        <div className="mt-1.5 flex items-center rounded-md border border-neutral-200 bg-white focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500">
+                                            <Button
+                                                onClick={handleLogin}
+                                                className="w-full"
+                                            >
+                                                {loading ? <Loading size={24} /> : "Sign In"}
+                                            </Button>
 
-                                            <Input
-                                                id="loginEmail"
-                                                value={loginEmail}
-                                                onChange={(e) => setLoginEmail(e.target.value)}
-                                                className="border-0 bg-transparent focus-visible:ring-0"
-                                                placeholder="you@example.com"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <Label htmlFor="loginPassword" className="font-medium">Password</Label>
-                                        <div className="mt-1.5 flex items-center rounded-md border border-neutral-200 bg-white focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500">
+                                            <div className="flex items-center gap-3">
+                                                <Separator className="flex-1" />
+                                                <span className="text-xs font-medium text-neutral-400">
+                                                    or
+                                                </span>
+                                                <Separator className="flex-1" />
+                                            </div>
 
-                                            <Input
-                                                id="loginPassword"
-                                                type="password"
-                                                value={loginPassword}
-                                                onChange={(e) => setLoginPassword(e.target.value)}
-                                                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-                                                className="border-0 bg-transparent focus-visible:ring-0"
-                                                placeholder="••••••••"
-                                            />
-                                        </div>
-                                    </div>
+                                            <Button
+                                                variant="outline"
+                                                className="flex w-full items-center justify-center gap-3"
+                                            >
+                                                <GoogleLogo />
+                                                <span>Continue with Google</span>
+                                            </Button>
 
-                                    <Button
-                                        onClick={handleLogin}
-                                        className="w-full bg-gradient-brand py-6 text-white shadow transition-all hover:scale-[1.02] hover:shadow-lg hover:brightness-110"
-                                    >
-                                        {loading ? <Loading size={24} /> : "Sign In"}
-                                    </Button>
+                                            <div className="flex justify-between text-sm">
+                                                <Button
+                                                    variant="link"
+                                                    onClick={() => alert("Password reset coming soon!")}
+                                                    className="h-auto p-0 text-center text-sm"
+                                                >
+                                                    Forgot password?
+                                                </Button>
 
-                                    <div className="flex justify-between text-sm">
-                                        <Button
-                                            variant="link"
-                                            onClick={() => alert("Password reset coming soon!")}
-                                            className="h-auto p-0 text-neutral-600 transition-all hover:text-brand-700"
-                                        >
-                                            Forgot password?
-                                        </Button>
-                                        <Button
-                                            variant="link"
-                                            onClick={() => setIsRegister(true)}
-                                            className="h-auto p-0 font-medium text-gradient-brand transition-all hover:brightness-110"
-                                        >
-                                            Create account
-                                        </Button>
-                                    </div>
-                                </>
-                            )}
-                        </CardContent>
-                    </Card>
-
-                    <p className="text-xs text-center text-neutral-500">
-                        By continuing you agree to our{" "}
-                        <Link to="/terms" className="text-neutral-600 underline hover:text-brand-600">
-                            Terms&nbsp;of&nbsp;Service
-                        </Link>{" "}
-                        and{" "}
-                        <Link to="/privacy" className="text-neutral-600 underline hover:text-brand-600">
-                            Privacy&nbsp;Policy
-                        </Link>
-                        .
-                    </p>
-                </div>
-            </section>
-
-            {/* RIGHT – hero (hidden on mobile) */}
-            <section className="hidden w-1/2 overflow-hidden md:block">
-                <div className="relative h-full w-full bg-linear-to-br/oklch from-[#208aae] to-[#4F772D]">
-                    <div className="absolute inset-0 bg-[url('/mesh-pattern.png')] opacity-20"></div>
-                    <div className="flex h-full flex-col items-center justify-center px-12 text-white">
-                        <div className="max-w-md space-y-6">
-                            <h2 className="text-4xl font-bold tracking-tight">
-                                Spoingo doingo floingo moingo!
-                            </h2>
-                            <p className="text-lg text-white/90">
-                                Big chungus comin thru with the big brain moves. Treetrack is the
-                                ultimate tool for managing your projects and tasks. With our intuitive
-                                interface and powerful features, you can easily track your progress, visualize your workflow, and collaborate with your team.
-                            </p>
-                            <div className="flex space-x-2">
-                                <div className="h-2 w-2 rounded-full bg-white/70 animate-pulse"></div>
-                                <div className="h-2 w-2 rounded-full bg-white/70 animate-pulse delay-300"></div>
-                                <div className="h-2 w-2 rounded-full bg-white/70 animate-pulse delay-700"></div>
+                                                <Button
+                                                    variant="link"
+                                                    onClick={() => setIsRegister(true)}
+                                                    className="h-auto p-0 text-center text-sm"
+                                                >
+                                                    <Link to="/register">Create an account</Link>
+                                                </Button>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
                             </div>
+
+                            <p className="text-xs text-center text-neutral-500">
+                                By continuing you agree to our{" "}
+                                <Link to="/tos" className="text-neutral-600 underline hover:text-brand-600">
+                                    Terms&nbsp;of&nbsp;Service
+                                </Link>{" "}
+                                and{" "}
+                                <Link to="/privacy" className="text-neutral-600 underline hover:text-brand-600">
+                                    Privacy&nbsp;Policy
+                                </Link>
+                                .
+                            </p>
                         </div>
-                    </div>
+                    </section>
                 </div>
-            </section>
+            </Card>
         </div>
     );
 };
 
 export default AuthForm;
-
-/* ------------ Tailwind additions ------------
-  Add these utilities (e.g. in globals.css or tailwind.config):
-
-
----------------------------------------------- */

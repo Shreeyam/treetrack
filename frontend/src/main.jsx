@@ -1,7 +1,8 @@
-import React, { useState } from 'react'; // Import useState
+// main.jsx
+import React, { useState, useEffect } from 'react'; // Import useState
 import ReactDOM from 'react-dom/client';
 // Import BrowserRouter here, but not useNavigate
-import { BrowserRouter, Routes, Route } from 'react-router';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router';
 // Import useNavigate here
 import { useNavigate } from 'react-router'; // Correct import for useNavigate
 import App from './App';
@@ -11,18 +12,13 @@ import ReloadOnErrorBoundary from '@/components/ReloadOnErrorBoundary';
 import AboutPage from './AboutPage'; // Assuming AboutPage is here\
 import PrivacyPage from './PrivacyPage'; // Assuming Privacy is here
 import TermsOfServicePage from './TermsOfServicePage'; // Assuming Privacy is here
+import PricingPage from './PricingPage';
+import AccountPage from './AccountPage'; 
+import { authClient } from "@/lib/auth";
 
-// Define a Root component to hold state
 function Root() {
-  // --- Authentication States ---
-  const [user, setUser] = useState(null); 
-  const navigate = useNavigate(); 
-
-  // You might want a function here to handle successful login/registration
-  const handleLogin = (userData) => {
-    setUser(userData);
-    navigate('/app'); // Redirect to the app page after login
-  };
+  // --- Authentication States ---`
+  const { data, isPending, error, refetch } = authClient.useSession();
 
   return (
     <ReloadOnErrorBoundary>
@@ -31,11 +27,11 @@ function Root() {
         <Route path="/about" element={<AboutPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/tos" element={<TermsOfServicePage />} />
-        {/* Pass user state to App */}
-        <Route path="/app" element={<App user={user} setUser={setUser} />} />
-        {/* Pass setUser or a handler function to AuthForm */}
-        <Route path="/login" element={<AuthForm onLogin={handleLogin} />} />
-        <Route path="/register" element={<AuthForm isRegister={true} onLogin={handleLogin} />} />
+        <Route path="/app" element={<App user={data?.user} userPending={isPending} />} />
+        <Route path="/pricing" element={<PricingPage />} />
+        <Route path="/account" element={<AccountPage />} />
+        <Route path="/login" element={<AuthForm />} />
+        <Route path="/register" element={<AuthForm isRegister={true} />} />
       </Routes>
     </ReloadOnErrorBoundary>
   );

@@ -14,16 +14,17 @@ import {
     Plus,
     WandSparkles,
     Sparkles,
-    Gem,
     FolderPlus,
     FolderMinus,
     User,
-    Coffee,
     LogOut,
     ChevronDown,
-    CircleHelp
+    CircleHelp,
+    Eye,
+    ChevronsUpDown,
 } from 'lucide-react';
 import { siDiscord } from 'simple-icons';
+import UserIcon from '@/components/ui/userIcon';
 
 const TopBar = memo(({
     newTaskTitle,
@@ -63,15 +64,17 @@ const TopBar = memo(({
                     onKeyDown={(e) => { if (e.key === 'Enter') onAddNode(null); }}
                     className="max-w-xs mr-0 rounded-r-none"
                 />
-                <Button onClick={() => onAddNode(null)} className="rounded-l-none">
+                <Button onClick={() => onAddNode(null)} className="rounded-l-none" title="Add New Task">
                     <Plus />
                 </Button>
             </div>
 
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                    <Button variant="outline">
-                        View Options <ChevronDown size={16} />
+                    <Button variant="outline" className="flex items-center" title="View Options">
+                        <Eye className="md:hidden" size={16} />
+                        <span className="hidden md:inline">View Options</span>
+                        <ChevronDown size={16} className="ml-1" />
                     </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -97,16 +100,28 @@ const TopBar = memo(({
                 </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button variant="outline" onClick={() => {
-                onAutoArrange();
-                onFitView(); // Enable fit view after auto-arranging
-            }}>
-                <WandSparkles /> Auto Arrange
+            <Button
+                variant="outline"
+                onClick={() => {
+                    onAutoArrange();
+                    onFitView(); // Enable fit view after auto-arranging
+                }}
+                className="flex items-center"
+                title="Auto Arrange"
+            >
+                <WandSparkles className="h-4 w-4" />
+                <span className="hidden md:inline">Auto Arrange</span>
             </Button>
             {
                 user.premium ? (
-                    <Button variant="outline" onClick={(e) => setGenerativeMode(!generativeMode)}>
-                        <Sparkles /> Generate
+                    <Button
+                        variant="outline"
+                        onClick={(e) => setGenerativeMode(!generativeMode)}
+                        className="flex items-center"
+                        title="Generate"
+                    >
+                        <Sparkles className="h-4 w-4" />
+                        <span className="hidden md:inline">Generate</span>
                     </Button>
                 ) : (
                     <>
@@ -118,6 +133,10 @@ const TopBar = memo(({
             }
 
             <div className="ml-auto flex items-center space-x-2">
+                <Button variant="outline">
+                    {projects.filter(p => p.id === currentProject)[0]?.name}
+                    <ChevronsUpDown className="h-4 w-4" />
+                </Button>
                 <select
                     className="
                         rounded-md text-sm font-medium transition-all
@@ -129,6 +148,7 @@ const TopBar = memo(({
                     "
                     value={currentProject || ''}
                     onChange={(e) => onProjectChange(e.target.value)}
+                    title="Select Project"
                 >
                     {projects.map(project => (
                         <option key={project.id} value={project.id}>
@@ -136,15 +156,26 @@ const TopBar = memo(({
                         </option>
                     ))}
                 </select>
-                <Button variant="outline" onClick={onCreateProject}>
-                    <FolderPlus /> New
+                <Button
+                    variant="outline"
+                    onClick={onCreateProject}
+                    className="flex items-center"
+                    title="Create New Project"
+                >
+                    <FolderPlus className="h-4 w-4" />
+                    <span className="hidden md:inline">New</span>
                 </Button>
-                <Button variant="destructive" onClick={onDeleteProject}>
-                    <FolderMinus />
+                <Button
+                    variant="destructive"
+                    onClick={onDeleteProject}
+                    className="flex items-center"
+                    title="Delete Project"
+                >
+                    <FolderMinus className="h-4 w-4" />
                 </Button>
                 <Popover>
                     <PopoverTrigger asChild>
-                        <Button variant="outline" size="icon">
+                        <Button variant="outline" size="icon" title="Keyboard Shortcuts">
                             <CircleHelp />
                         </Button>
                     </PopoverTrigger>
@@ -183,8 +214,13 @@ const TopBar = memo(({
                 </Popover>
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="outline">
-                            <User /> {user.username}
+                        <Button
+                            variant="outline"
+                            className="flex items-center"
+                            title="User Menu"
+                        >
+                            <UserIcon user={user} />
+                            <span className="hidden md:inline">{user.name}</span>
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
@@ -205,12 +241,8 @@ const TopBar = memo(({
                             </a>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild>
-                            <a
-                                href="https://ko-fi.com/shreeyam"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                            >
-                                <Coffee /> Tip Jar
+                            <a href="/account">
+                                <User /> Account Settings
                             </a>
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={onLogout} className="text-destructive">

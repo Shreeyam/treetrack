@@ -1,10 +1,5 @@
 // src/api.js
 
-export const fetchUser = async () => {
-  const res = await fetch('/api/me', { credentials: 'include' });
-  return res.json();
-};
-
 export const fetchProjects = async () => {
   const res = await fetch('/api/projects', { credentials: 'include' });
   return res.json();

@@ -3,13 +3,16 @@ import { betterAuth } from "better-auth";
 import { stripe } from "@better-auth/stripe";
 import { db } from "./db.js";
 import Stripe from "stripe";
+import dotenv from "dotenv";
+dotenv.config();
 
-export const stripeClient = new Stripe(process.env.STRIPE_API_KEY);
+export const stripeClient = new Stripe(process.env.STRIPE_API_KEY, {
+  apiVersion: "2025-03-31.basil",
+});
 
 // Create the tables if they don't exist
-
 db.prepare(`
-CREATE TABLE IF NOT EXISTS "user" (
+CREATE TABLE IF NOT EXISTS user (
   id               TEXT      PRIMARY KEY,
   firstName        TEXT      NOT NULL,
   lastName         TEXT      NOT NULL,
@@ -18,7 +21,7 @@ CREATE TABLE IF NOT EXISTS "user" (
   image            TEXT,
   createdAt        DATETIME  NOT NULL DEFAULT (datetime('now')),
   updatedAt        DATETIME  NOT NULL DEFAULT (datetime('now')),
-  stripeCustomerId TEXT,
+  stripeCustomerId TEXT
 );`).run();
 
 db.prepare(`
@@ -98,14 +101,14 @@ export const auth = betterAuth({
   trustedOrigins: [
     "http://localhost:5173",
   ],
-  
+
   plugins: [
     stripe({
       stripeClient,
       stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
       createCustomerOnSignUp: true,
       onCustomerCreate: async ({ customer, stripeCustomer, user }, request) => {
-        console.log(`Customer ${customer.id} created for user ${user.id}`);
+        console.log(`Customer ${stripeCustomer.id} created for user ${user.id}`);
       },
       subscription: {
         enabled: true,
@@ -114,12 +117,65 @@ export const auth = betterAuth({
             name: "pro",
             priceId: "price_1RDJ22IBLqJf1tZvK0DJ57Pa",
             annualDiscountPriceId: "price_1ROrCJIBLqJf1tZvIJmF4r10",
-            freeTrial: {
-                days: 30,
-            }
+
           },
         ],
       },
+      onEvent: async (event, request) => {
+        if (event.type !== "customer.subscription.created") return;
+
+        const sub = event.data.object;
+        const stripeCustomerId =
+          typeof sub.customer === "string" ? sub.customer : sub.customer.id;
+
+        const userRow = db
+          .prepare("SELECT id FROM user WHERE stripeCustomerId = ?")
+          .get(stripeCustomerId);
+
+        if (!userRow) {
+          console.warn(
+            `No local user found for Stripe customer ${stripeCustomerId}`
+          );
+          return;
+        }
+
+        // upsert the subscription record
+        db.prepare(`
+          INSERT INTO subscription (
+            id,
+            plan,
+            referenceId,
+            stripeCustomerId,
+            stripeSubscriptionId,
+            status,
+            periodStart,
+            periodEnd,
+            cancelAtPeriodEnd,
+            seats
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            plan = excluded.plan,
+            referenceId = excluded.referenceId,
+            stripeCustomerId = excluded.stripeCustomerId,
+            stripeSubscriptionId = excluded.stripeSubscriptionId,
+            status = excluded.status,
+            periodStart = excluded.periodStart,
+            periodEnd = excluded.periodEnd,
+            cancelAtPeriodEnd = excluded.cancelAtPeriodEnd,
+            seats = excluded.seats
+        `).run(
+          sub.id,
+          sub.items.data[0].price.id,
+          userRow.id,
+          stripeCustomerId,
+          sub.id,
+          sub.status,
+          sub.current_period_start * 1000,
+          sub.current_period_end * 1000,
+          sub.cancel_at_period_end ? 1 : 0,
+          sub.items.data[0].quantity ?? 1
+        );
+      }
     })
   ]
 });

@@ -22,11 +22,11 @@ export default function FAQ() {
         },
         {
             "question": "When should I upgrade to Pro?",
-            "answer": "Upgrade when you need unlimited projects, bulk AI editing, and teams larger than five people. Pro is \$4 per seat / month or \$30 billed annually."
+            "answer": "Upgrade when you need unlimited projects, bulk AI editing, and teams larger than five people. Pro is \$6 per seat / month or \$48 billed annually."
         },
         {
-            "question": "Does Treetrack have an AI assistant?",
-            "answer": "Yes. Type a plain-English prompt—e.g., “Plan a product-launch timeline in six weeks”—and the co-planner generates a fully sequenced DAG you can tweak. AI also refines, groups, or reschedules existing tasks."
+            "question": "What does Treetrack's AI integration do?",
+            "answer": "Generate, modify, and inspect all aspects of your project. Type a plain-English prompt—e.g., “Plan a product-launch timeline in six weeks”—and the co-planner generates a fully sequenced plan you can tweak. AI also refines, groups, or reschedules existing tasks."
         },
         {
             "question": "Can I import my existing tasks?",

@@ -210,10 +210,14 @@ app.post('/api/projects', isAuthenticated, (req, res) => {
 
 app.delete('/api/projects/:id', isAuthenticated, (req, res) => {
   const projectId = req.params.id;
-  db.run("DELETE FROM projects WHERE id = ? AND user_id = ?", [projectId, req.session.user.id], function (err) {
-    if (err) return res.status(400).json({ error: err.message });
-    res.json({ changes: this.changes });
-  });
+  try {
+    const info = db
+      .prepare("DELETE FROM projects WHERE id = ? AND user_id = ?")
+      .run(projectId, req.session.user.id);
+    res.json({ changes: info.changes });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 
